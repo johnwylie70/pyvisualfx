@@ -1939,15 +1939,135 @@ function effects(canvas, options) {
   }
   return pipe.api
 }
+/**
+ * WHAT EACH EFFECT IS, in a line, and the group it is shown in. The documentation (docs/effects.md, its pictures)
+ * is written from this and from the settings above, so an effect added here is in the docs with no more to do.
+ */
+const GROUPS = {
+  'Shapes of the picture': ['kaleidoscope', 'mirror', 'tile', 'pixelate', 'hexagons', 'waves', 'ripple', 'wobble', 'heatHaze', 'swirl', 'fisheye', 'tunnel', 'droste', 'rotozoom', 'glassTiles', 'frosted', 'caustics', 'shake', 'punch'],
+  'Blur and light': ['blur', 'zoomBlur', 'spinBlur', 'motionBlur', 'tiltShift', 'softFocus', 'glow', 'lightRays', 'streaks'],
+  'What was drawn stays': ['trails', 'smear', 'stutter'],
+  'Colours': ['hue', 'saturate', 'brighten', 'contrast', 'invert', 'posterize', 'tint', 'duotone', 'colourCycle', 'gradientMap', 'thermal', 'nightVision', 'sepia', 'threshold', 'solarize', 'rgbSplit', 'colourBleed', 'rainbowEdges'],
+  'Screens and old computers': ['scanlines', 'crt', 'interlace', 'glitch', 'dither', 'led', 'letters'],
+  'Drawn, printed and painted': ['edges', 'dots', 'emboss', 'sharpen', 'sketch', 'cartoon', 'stainedGlass', 'crosshatch', 'oil'],
+  'In front of the picture': ['vignette', 'grain', 'dust', 'lightLeaks', 'rain', 'snow', 'bokeh', 'fog', 'lightning'],
+  'Backdrops that need no drawing': ['plasma', 'flow', 'metaballs', 'starfield', 'warp', 'voronoi', 'moire', 'interference', 'aurora', 'fire', 'clouds', 'matrixRain', 'copperBars', 'checkerFloor', 'twister'],
+  'The music, drawn': ['spectrumBars', 'spectrumRing', 'waveformRing', 'beatFlash', 'bassShake'],
+}
+const ABOUT = {
+  kaleidoscope: 'One slice of the picture, folded round and round. The slice starts at the middle and points right: turn it with angle.',
+  mirror: 'One half of the picture shown on both sides, or one quarter in all four.',
+  tile: 'The picture repeated in rows and columns.',
+  pixelate: 'Big square pixels.',
+  hexagons: 'Six-sided pixels, like a honeycomb.',
+  waves: 'The picture ripples like a flag in the wind.',
+  ripple: 'Rings spreading from a point, as from a stone dropped in water.',
+  wobble: 'The picture wobbles like jelly, or something seen under water.',
+  heatHaze: 'The shimmer of hot air rising.',
+  swirl: 'The middle of the picture twisted round, like stirred paint.',
+  fisheye: 'A bulge, as through a round lens. Below zero it pinches instead.',
+  tunnel: 'The picture becomes the walls of a tunnel you are flying down.',
+  droste: 'The picture inside itself, smaller each time, for ever. With a twist it winds in as a spiral.',
+  rotozoom: 'The picture tiled, turning and zooming: an old demo-scene favourite.',
+  glassTiles: 'Seen through a wall of glass blocks.',
+  frosted: 'Seen through frosted glass.',
+  caustics: 'The net of bright lines that sunlight makes on the floor of a pool.',
+  shake: 'The whole picture shakes. Set strength when something hits, and let it fall away.',
+  punch: 'A zoom in towards a point. Tie its strength to the beat.',
+  blur: 'Out of focus.',
+  zoomBlur: 'Rushing towards a point.',
+  spinBlur: 'Spinning round a point.',
+  motionBlur: 'Moving fast in one direction.',
+  tiltShift: 'A band in focus and the rest blurred, which makes a scene look like a tiny model.',
+  softFocus: 'A soft, dreamy haze over the bright parts.',
+  glow: 'Bright things shine and spread light around them.',
+  lightRays: 'Rays of light streaming out from a point, through whatever is bright.',
+  streaks: 'Long sideways flares from bright lights, as a film camera makes.',
+  trails: 'What was drawn stays and fades. With zoom, spin and hue it becomes the classic screensaver tunnel.',
+  smear: 'What was drawn is carried away on a slow current, like wet paint.',
+  stutter: 'Only so many new pictures a second: the last one is held between them.',
+  hue: 'Every colour moved round the colour wheel. With speed, the colours keep turning.',
+  saturate: 'More colour, or less: at 0 the picture is grey.',
+  brighten: 'Brighter, or darker below 1.',
+  contrast: 'Lights lighter and darks darker.',
+  invert: 'A negative: every colour swapped for its opposite.',
+  posterize: 'Only a few shades of each colour, like a poster.',
+  tint: 'Seen through coloured glass.',
+  duotone: 'Two colours only: one for the dark parts and one for the light.',
+  colourCycle: 'Brightness becomes a colour from a palette, and the colours move round.',
+  gradientMap: 'Brightness becomes a colour from a palette, dark to light.',
+  thermal: 'A heat camera: cold is dark blue, hot is yellow and white.',
+  nightVision: 'Green, grainy and bright in the dark, like a night-vision scope.',
+  sepia: 'The warm brown of an old photograph.',
+  threshold: 'Two colours and nothing between: dark or light.',
+  solarize: 'The bright parts turned to their opposite, as in an over-exposed photograph.',
+  rgbSplit: 'Red and blue pulled apart, like a cheap lens or a bad signal.',
+  colourBleed: 'Colours smeared sideways, as on old videotape.',
+  rainbowEdges: 'Every edge in the picture drawn in rainbow colours.',
+  scanlines: 'Dark lines across the picture, as on an old screen.',
+  crt: 'An old television: curved glass, lines, and thin stripes of red, green and blue.',
+  interlace: 'Every other line dark, swapping each frame, like old video.',
+  glitch: 'A broken signal: blocks that jump sideways, a line that tears, a band of snow.',
+  dither: 'A few colours made to pass for many with a pattern of dots, as old computers did.',
+  led: 'A wall of round lamps.',
+  letters: 'The picture made of marks, as an old terminal would show it.',
+  edges: 'Only the outlines, each in its own colour.',
+  dots: 'Printed in dots, big where the picture is bright, as a comic or a newspaper is.',
+  emboss: 'Pressed into grey metal: only the bumps and hollows show.',
+  sharpen: 'Crisper edges.',
+  sketch: 'A pencil drawing on paper.',
+  cartoon: 'Flat colours and black outlines.',
+  stainedGlass: 'Pieces of coloured glass with dark lead between them.',
+  crosshatch: 'Shaded with crossing pen lines: more lines where it is darker.',
+  oil: 'Smoothed into patches of colour, like oil paint. Heavy: it looks at 36 places for every pixel.',
+  vignette: 'Dark corners, which draw the eye to the middle.',
+  grain: 'The fine speckle of film.',
+  dust: 'Specks and scratches, as on old film.',
+  lightLeaks: 'Warm light creeping in from the sides, as in an old camera.',
+  rain: 'Rain falling in front of the picture.',
+  snow: 'Snow falling in front of the picture.',
+  bokeh: 'Soft discs of coloured light drifting by: lamps out of focus.',
+  fog: 'Drifting mist, thicker towards the bottom.',
+  lightning: 'A flash, now and then.',
+  plasma: 'Slow rolling colour.',
+  flow: 'Colour that folds and curls like ink in water.',
+  metaballs: 'Blobs that melt into each other when they meet: a lava lamp.',
+  starfield: 'Flying through stars.',
+  warp: 'A chequered tunnel rushing past.',
+  voronoi: 'Soft coloured cells that slowly shift.',
+  moire: 'Two sets of rings crossing, making patterns neither has alone.',
+  interference: 'Waves from four moving points, crossing.',
+  aurora: 'The northern lights over a night sky.',
+  fire: 'Flames rising from the bottom of the picture.',
+  clouds: 'A sky with drifting clouds.',
+  matrixRain: 'Green marks falling in columns.',
+  copperBars: 'Shining bars sliding up and down: a demo-scene classic.',
+  checkerFloor: 'A chequered floor rushing towards you under a glowing horizon.',
+  twister: 'A twisting four-sided bar, another demo-scene classic.',
+  spectrumBars: 'The music as bars: low notes at the left, high at the right.',
+  spectrumRing: 'The music as bars round a ring.',
+  waveformRing: 'The sound\'s own wave, bent into a ring.',
+  beatFlash: 'A flash of colour on each beat.',
+  bassShake: 'The picture shakes with the bass.',
+}
+const LOOK_ABOUT = {
+  dream: 'Soft, glowing and rich.', arcade: 'The curved glass of an old arcade machine.', vhs: 'A worn videotape.', neon: 'Glowing outlines in the dark.',
+  comic: 'A few flat colours, printed in dots.', underwater: 'Blue, wobbling and dim at the edges.', oldfilm: 'Brown, grainy and dark at the corners.',
+  disco: 'A kaleidoscope whose colours keep turning.', gameboy: 'Four shades of green.', c64: 'The colours of a 1980s home computer.',
+  noir: 'Black and white, high contrast, grainy.', comicbook: 'Black outlines over printed dots.', storm: 'Rain, lightning and fog.',
+  winter: 'Cold light and falling snow.', cinema: 'A film camera: flares, a narrow focus, grain.', terminal: 'Green marks on a dark screen.',
+}
+const groupOf = (name) => Object.keys(GROUPS).find((g) => GROUPS[g].includes(name)) || 'More'
+
 /** Every effect and its settings, for a host that keeps a scene's code in another language. */
 effects.definitions = () => {
   const out = {}
   for (const name of NAMES) {
     const def = DEFS[name], settings = {}
-    for (const key in def.settings) { const s = def.settings[key]; settings[key] = { kind: s.kind, default: s.default, ...(s.min !== undefined ? { min: s.min, max: s.max } : {}), ...(s.choices ? { choices: s.choices } : {}), ...(s.place ? { place: true } : {}) } }
-    out[name] = { order: def.order, settings, backdrop: !!def.backdrop, cost: def.cost || (def.run ? 'some' : 'light') }
+    for (const key in def.settings) { const s = def.settings[key]; settings[key] = { kind: s.kind, default: s.default, ...(s.min !== undefined ? { min: s.min, max: s.max } : {}), ...(s.choices ? { choices: s.choices } : {}), ...(s.place ? { place: true } : {}), ...(s.unit ? { unit: s.unit } : {}) } }
+    out[name] = { order: def.order, settings, backdrop: !!def.backdrop, cost: def.cost || (def.run ? 'some' : 'light'), feedback: !!def.feedback || name === 'trails', group: groupOf(name), about: ABOUT[name] || '' }
   }
-  return { effects: out, looks: Object.keys(LOOKS), palettes: Object.keys(PALETTES), aliases: { bloom: 'glow', colorCycle: 'colourCycle', bulge: 'fisheye', halftone: 'dots', colorBleed: 'colourBleed', godRays: 'lightRays' } }
+  return { effects: out, groups: [...Object.keys(GROUPS), 'More'], looks: Object.keys(LOOKS), recipes: LOOKS, lookAbout: LOOK_ABOUT, palettes: Object.keys(PALETTES), paletteColours: PALETTES, aliases: { bloom: 'glow', colorCycle: 'colourCycle', bulge: 'fisheye', halftone: 'dots', colorBleed: 'colourBleed', godRays: 'lightRays' } }
 }
 function onlyCanvas() {
   // A canvas laid over the scene's by this library or by dials.js is not the scene's.

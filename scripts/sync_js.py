@@ -31,7 +31,12 @@ def main():
     module = MODULE.read_text(encoding="utf-8")
     if not MARKS.search(module):
         sys.exit("src/pyvisualfx/__init__.py has no EFFECTS marks to write between")
-    lines = "\n".join(re.findall(r".{1,118}(?:(?<=[,{}\[\]])|$)", table))
+    # One effect to a line, so a change to one effect is one line of a diff.
+    data = json.loads(table)
+    one = lambda v: json.dumps(v, ensure_ascii=False, separators=(",", ":"))
+    parts = ['"effects":{\n%s\n}' % ",\n".join("%s:%s" % (one(k), one(v)) for k, v in data["effects"].items())]
+    parts += ["%s:%s" % (one(k), one(v)) for k, v in data.items() if k != "effects"]
+    lines = "{%s}" % ",\n".join(parts)
     written = MARKS.sub(lambda m: '# EFFECTS:BEGIN\n_TABLE = json.loads(r"""%s""")\n# EFFECTS:END\n' % lines, module)
     assert json.loads(re.search(r'json\.loads\(r"""(.*?)"""\)', written, re.S).group(1)) == json.loads(table)
     out = 0
