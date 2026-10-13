@@ -7,7 +7,7 @@
  *   kaleidoscope(8)                         on, eight segments
  *   glow(0.8)                               bright things shine
  *   const trail = trails(0.5, { zoom: 1.5, spin: 20 })
- *   trail.spin = Math.sin(time) * 40        a setting is a plain property: change it any time
+ *   trail.spin = 40                         a setting is a plain property: change it any time
  *   glowing.strength = () => 0.3 + bass()   or give it a function, asked every frame
  *
  * EFFECTS APPLY IN THE ORDER THEY ARE TURNED ON, to everything the scene has drawn, 2D or 3D. Each has
@@ -78,15 +78,15 @@ const PALETTES = {
   rainbow: ['#ff2a2a', '#ffd92a', '#3cff5a', '#2ad4ff', '#5a3cff', '#ff2ad4'],
   fire: ['#000000', '#5a0a00', '#d43a00', '#ff9a1a', '#ffe98a', '#5a0a00'],
   ocean: ['#02102a', '#0a3a7a', '#1a8ad4', '#6ae0e0', '#e8fff8', '#0a3a7a'],
-  sunset: ['#1a0a3a', '#6a1a7a', '#e0407a', '#ff8a3a', '#ffd86a', '#6a1a7a'],
-  neon: ['#0a001a', '#ff1ad9', '#1affea', '#f6ff1a', '#7a1aff', '#1affea'],
-  candy: ['#ff8ad4', '#ffd0e8', '#8ad4ff', '#b8ffd0', '#fff0a0', '#d0a0ff'],
+  sunset: ['#0a1030', '#7a1a4a', '#e0407a', '#ff8a3a', '#ffd86a', '#7a1a4a'],
+  neon: ['#00081a', '#ff1a8c', '#1affea', '#f6ff1a', '#1a6aff', '#1affea'],
+  candy: ['#ff8ad4', '#ffd0e8', '#8ad4ff', '#b8ffd0', '#fff0a0', '#a0c0ff'],
   forest: ['#04140a', '#0e4a22', '#3a8a2a', '#a8d44a', '#f0f0a0', '#0e4a22'],
   ice: ['#020818', '#103a6a', '#4a9ae0', '#b8e8ff', '#ffffff', '#4a9ae0'],
   lava: ['#1a0000', '#8a0a00', '#ff3a00', '#ff9a00', '#ffe27a', '#ff5a00'],
   mono: ['#000000', '#ffffff'],
   thermal: ['#000000', '#20008c', '#cc0077', '#ff3000', '#ffd000', '#ffffff'],
-  aurora: ['#00ff9a', '#00b0ff', '#8a2be2', '#00ff9a'],
+  aurora: ['#00ff9a', '#00b0ff', '#2b6be2', '#00ff9a'],
   gameboy: ['#0f380f', '#306230', '#8bac0f', '#9bbc0f'],
   c64: ['#000000', '#352879', '#6c5eb5', '#9a6759', '#b8c76f', '#ffffff'],
   amiga: ['#000022', '#0055aa', '#ff8800', '#ffffff'],
@@ -939,7 +939,7 @@ vec3 backdrop(vec2 uv) {
   }
   return c;
 }`, { backdrop: true, rename: { size: 'big' } })
-define('checkerFloor', ['colour'], { colour: colour('#ff2ad4'), dark: colour('#12103a'), speed: num(1, -10, 10) }, `
+define('checkerFloor', ['colour'], { colour: colour('#ff2a6d'), dark: colour('#101a3a'), speed: num(1, -10, 10) }, `
 vec3 backdrop(vec2 uv) {
   float h = 0.42, d = uv.y - h;
   if (d <= 0.0) return mix(vec3(0.01, 0.0, 0.05), colour * 0.55, pow(uv.y / h, 5.0));
