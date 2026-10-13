@@ -245,8 +245,11 @@ def _frame():
         _run.api.frame(dt)
 
 
-def _told(bands):
-    _run.bands = [float(b) for b in bands]
+def _told(e):
+    """What the page reports with a frame: the music's five numbers."""
+    bands = e.get("b") if hasattr(e, "get") else None
+    if bands:
+        _run.bands = [float(b) for b in bands]
     _run.api.ack()
 
 

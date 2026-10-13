@@ -123,7 +123,7 @@ def test_looks_shaders_music_and_the_frame():
     # The music's numbers are asked for once, and are what the page last told.
     assert vfx.bass() == 0
     assert sent[1][0] == "report"
-    sent[1][1]([0.5, 0.25, 0.125, 1, 0])
+    sent[1][1]({"b": [0.5, 0.25, 0.125, 1, 0]})
     assert (vfx.bass(), vfx.mids(), vfx.highs(), vfx.loudness(), vfx.pulse()) == (0.5, 0.25, 0.125, 1, 0) and sent[-1] == ("ack",)
 
 

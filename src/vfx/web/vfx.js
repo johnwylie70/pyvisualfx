@@ -1137,7 +1137,8 @@ class Pipeline {
     if (now.join() === this.toldLast) return
     this.toldLast = now.join()
     this.armed = false
-    this.told(now)
+    // Told as an object with one list in it: that is the shape a host's callback is given (Pyctures makes an event of it).
+    this.told({ b: now })
   }
 
   /** The picture on the screen as numbers, straight after a frame: { width, height, data } with four numbers a pixel, top row first. */
@@ -1422,7 +1423,7 @@ function api(pipe) {
     set(id, name, value) { const fx = made.get(id); if (fx) fx[camel(name)] = value },
     call(id, name) { const fx = made.get(id); if (fx && typeof fx[name] === 'function') fx[name]() },
     listen: (target) => out.listenTo(target),
-    /** The music's five numbers (bass, mids, highs, loudness, pulse) are told to `fn` when they change, once it has answered the last with ack(). */
+    /** The music's five numbers are told to `fn` as { b: [bass, mids, highs, loudness, pulse] } when they change, once it has answered the last with ack(). */
     report(fn) { pipe.told = fn; pipe.armed = true },
     ack() { pipe.armed = true },
   })
