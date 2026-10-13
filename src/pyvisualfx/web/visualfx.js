@@ -1025,6 +1025,7 @@ class Listener {
     this.since = 1
     this.last = null
     this.stamp = 0 // goes up when the textures need sending again
+    this.used = false // nothing is asked of the sound until something here wants to know (a synth is not made to report for nothing)
     this.re = this.im = this.window = null
   }
 
@@ -1046,6 +1047,7 @@ class Listener {
   }
 
   update(dt) {
+    if (!this.used) return
     const ease = (now, to, up, down) => now + (to - now) * (1 - Math.exp(-dt / (to > now ? up : down)))
     const s = this.heard()
     let bass = 0, mids = 0, highs = 0, loud = 0
@@ -1225,6 +1227,9 @@ class Pipeline {
     this.canvas = canvas
     this.manual = !!options.manual
     this.sound = options.sound || null // where the music comes from when a scene has not said (a host's)
+    // A host's function that gives a canvas laid over the scene's which is PART OF THE SCENE'S PICTURE (the old scene
+    // going out during a transition), or nothing. The effects are given the two together, and are shown over both.
+    this.under = options.under || null
     this.effects = []
     this.listener = new Listener()
     this.heard = false
@@ -1455,6 +1460,7 @@ class Pipeline {
     if (L.amount) gl.uniform1f(L.amount, fx ? clamp(fx.get('amount'), 0, 1) : 1)
     if (L.seed && !(values && 'seed' in values)) gl.uniform1f(L.seed, 1)
     const l = this.listener
+    if (L.bass || L.mids || L.highs || L.loudness || L.pulse || L.spectrum || L.waveform) l.used = true
     if (L.bass) gl.uniform1f(L.bass, l.bass)
     if (L.mids) gl.uniform1f(L.mids, l.mids)
     if (L.highs) gl.uniform1f(L.highs, l.highs)
@@ -1528,13 +1534,20 @@ class Pipeline {
     if (layer.style.width !== W + 'px') layer.style.width = W + 'px'
     if (layer.style.height !== H + 'px') layer.style.height = H + 'px'
     // Straight after the scene's canvas, under anything else laid over it (a dial is not blurred).
-    if (canvas.nextSibling !== layer) canvas.after(layer)
+    const below = this.over() || canvas
+    if (below.nextSibling !== layer) below.after(layer)
     if (w === this.w && h === this.h) return
     if (this.w) this.free()
     this.w = w; this.h = h
     layer.width = w
     layer.height = h
     this.main = [this.texture(w, h), this.texture(w, h)]
+  }
+
+  /** What is laid over the scene's canvas as part of its picture just now (see `under`), if anything is. */
+  over() {
+    if (!this.under) return null
+    try { const c = this.under(); return c && c.isConnected && c.width && c.height ? c : null } catch (e) { return null }
   }
 
   /**
@@ -1547,12 +1560,14 @@ class Pipeline {
     const gl = this.gl, c = this.canvas
     const t0 = performance.now()
     let from = c
-    if (this.w < c.width * 0.95) {
+    const over = this.over()
+    if (over || this.w < c.width * 0.95) {
       if (!this.small) this.small = document.createElement('canvas').getContext('2d')
       const s = this.small
       if (s.canvas.width !== this.w || s.canvas.height !== this.h) { s.canvas.width = this.w; s.canvas.height = this.h }
       s.globalCompositeOperation = 'copy'
       s.drawImage(c, 0, 0, this.w, this.h)
+      if (over) { s.globalCompositeOperation = 'source-over'; s.drawImage(over, 0, 0, this.w, this.h) }
       from = s.canvas
     }
     if (!this.input) this.input = this.texture(0, 0, { fbo: false })
@@ -1840,7 +1855,7 @@ function api(pipe) {
   out.halftone = out.dots
   out.colorBleed = out.colourBleed
   out.godRays = out.lightRays
-  const band = (name) => () => pipe.listener[name]
+  const band = (name) => () => { pipe.listener.used = true; return pipe.listener[name] }
   const bands = { bass: band('bass'), mids: band('mids'), highs: band('highs'), loudness: band('loudness'), pulse: band('pulse') }
   const bandOf = (which) => {
     if (typeof which === 'function') return which
@@ -1878,6 +1893,7 @@ function api(pipe) {
     /** What the music is taken from: soundOutput(), a synth, a song, the microphone, or anything with samples(). */
     listenTo(target) {
       pipe.heard = true
+      pipe.listener.used = true
       pipe.listener.listen(target)
       return { ...bands, level: bands.loudness, spectrum: () => pipe.listener.spectrum, waveform: () => pipe.listener.waveform, stop() { pipe.listener.listen(null) } }
     },
@@ -1920,7 +1936,7 @@ function api(pipe) {
     call(id, name) { const fx = made.get(id); if (fx && typeof fx[name] === 'function') fx[name]() },
     listen: (target) => out.listenTo(target),
     /** The music's five numbers are told to `fn` as { b: [bass, mids, highs, loudness, pulse] } when they change, once it has answered the last with ack(). */
-    report(fn) { pipe.told = fn; pipe.armed = true },
+    report(fn) { pipe.told = fn; pipe.armed = true; pipe.listener.used = true },
     ack() { pipe.armed = true },
   })
   return out
@@ -2070,8 +2086,8 @@ effects.definitions = () => {
   return { effects: out, groups: [...Object.keys(GROUPS), 'More'], looks: Object.keys(LOOKS), recipes: LOOKS, lookAbout: LOOK_ABOUT, palettes: Object.keys(PALETTES), paletteColours: PALETTES, aliases: { bloom: 'glow', colorCycle: 'colourCycle', bulge: 'fisheye', halftone: 'dots', colorBleed: 'colourBleed', godRays: 'lightRays' } }
 }
 function onlyCanvas() {
-  // A canvas laid over the scene's by this library or by dials.js is not the scene's.
-  const found = [...document.querySelectorAll('canvas')].filter((c) => c.dataset.effectsLayer === undefined && c.dataset.dialsLayer === undefined)
+  // A canvas laid over the scene's by this library, by dials.js or for a change of scene is not the scene's.
+  const found = [...document.querySelectorAll('canvas')].filter((c) => c.dataset.effectsLayer === undefined && c.dataset.dialsLayer === undefined && !Object.keys(c.dataset).some((k) => /Transition$/.test(k)))
   if (found.length === 1) return found[0]
   throw new Error(found.length
     ? 'There is more than one canvas on this page, so say which one the effects are for: const { glow, trails } = effects(canvas)'
@@ -2081,14 +2097,33 @@ function onlyCanvas() {
 // --------------------------------------------------------------------------------------------
 // FILM: the scene stepped a frame at a time, each frame exactly 1/fps after the last however long it took
 // to draw, for a page that has no recorder of its own (Circuitry has one, and steps the page the same way).
+// SOUND is stepped with it when the scene's sound is a stepped player (synths.js: createPlayer({ stepped }),
+// which pictures.js makes for runScene(…, { stepped: { fps } })): before each frame is drawn the player is
+// told where the clock is and makes exactly the samples up to there, so the film's sound is with its
+// pictures to the sample, and what the effects hear (bass(), pulse()) is the frame they are drawn on.
+/** The stepped player in what was given: the player, a scene with one as `sound`, or a function that gives either. */
+function steppedOf(given) {
+  try {
+    let s = typeof given === 'function' ? given() : given
+    if (s && !s.stepped && s.sound) s = s.sound
+    if (s && !s.stepped && s.player) s = s.player
+    return s && s.stepped && typeof s.stepped.advance === 'function' ? s.stepped : null
+  } catch (e) { return null }
+}
+
 /**
  * The next frames of the page, one at a time: `await renderFrames({ seconds: 3, fps: 60, onFrame })`.
  * `onFrame(canvas, n, time)` is given each finished picture (the scene, its effects and anything else
  * laid over it) on one canvas that is used again for the next, and may be awaited. With no `onFrame` it
  * gives back a list of pictures (ImageBitmap), which for a long film is a great deal of memory.
  * While it runs, the page's clock is this one: requestAnimationFrame and performance.now are stepped.
+ * `sound` is the scene's stepped sound (a synths.js stepped player, a pictures.js scene that has one, or a
+ * function that gives either once there is one): it is moved with the frames, and `onSound(left, right,
+ * sampleRate, n)` is given the samples of each frame after it, exactly sampleRate / fps of them with the
+ * remainder carried, so n frames are round(n × sampleRate / fps) samples. Without `sound`, or with a
+ * scene that makes none, `onSound` is never called.
  */
-async function renderFrames({ seconds = 3, fps = 60, frames = Math.round(seconds * fps), onFrame = null, canvas = null } = {}) {
+async function renderFrames({ seconds = 3, fps = 60, frames = Math.round(seconds * fps), onFrame = null, canvas = null, sound = null, onSound = null } = {}) {
   canvas ||= onlyCanvas()
   const real = { raf: window.requestAnimationFrame, caf: window.cancelAnimationFrame, now: performance.now }
   // The frame the browser has already promised is let through first, so everything waiting is waiting on this clock.
@@ -2100,12 +2135,36 @@ async function renderFrames({ seconds = 3, fps = 60, frames = Math.round(seconds
   const out = Object.assign(document.createElement('canvas'), { width: canvas.width, height: canvas.height })
   const g = out.getContext('2d')
   const kept = []
+  // THE SOUND. `stepped` once the scene has a stepped player; `owed` the frames that went by before it had one,
+  // which are silence. The player's clock is the page's, so it is told the clock, and makes the samples up to it.
+  let stepped = null, owed = 0, first = 0, heardTo = 0, stop = null
+  const hear = async (n) => {
+    if (!sound) return
+    if (!stepped) {
+      stepped = steppedOf(sound)
+      if (!stepped) { owed = n; return }
+      // A player that has made nothing yet began with the film; one that has is joined where it is.
+      if (stepped.samples) { stepped.startAt(clock / 1000); owed = n } else { stepped.startAt(first / 1000); owed = 0 }
+      stepped.take()
+      const lead = Math.round(owed * stepped.sampleRate / fps)
+      if (lead && onSound) await onSound(new Float32Array(lead), new Float32Array(lead), stepped.sampleRate, -1)
+      heardTo = lead
+    }
+    const made = []
+    stop = stepped.onAdvance((l, r) => made.push([l, r]))
+    try { await stepped.advance(clock / 1000) } finally { stop(); stop = null }
+    stepped.take()
+    for (const [l, r] of made) { heardTo += l.length; if (onSound) await onSound(l, r, stepped.sampleRate, n - 1) }
+  }
   try {
     // One real frame lets what was already asked of the browser's own clock ask again of this one.
     // This clock starts at that frame's own time, so the first step is exactly 1/fps like every other.
-    await new Promise((done) => real.raf.call(window, (now) => { clock = now; setTimeout(done, 0) }))
+    const zero = await new Promise((done) => real.raf.call(window, (now) => { clock = now; setTimeout(() => done(now), 0) }))
+    first = zero + 1000 / fps
     for (let n = 0; n < frames; n++) {
-      clock += 1000 / fps
+      clock = zero + (n + 1) * 1000 / fps
+      // The sound up to this frame is made before the frame is drawn: what the scene reads of it is this frame's.
+      await hear(n)
       const due = waiting
       waiting = []
       for (const [, fn] of due) fn(clock)
@@ -2123,7 +2182,11 @@ async function renderFrames({ seconds = 3, fps = 60, frames = Math.round(seconds
       // What the scene awaits between frames (a promise, a timer that is due) is given its turn.
       await new Promise((done) => setTimeout(done, 0))
     }
+    // The last frame lasts 1/fps too, and its sound is the film's.
+    clock = zero + (frames + 1) * 1000 / fps
+    await hear(frames)
   } finally {
+    if (stop) stop()
     window.requestAnimationFrame = real.raf
     window.cancelAnimationFrame = real.caf
     performance.now = real.now
@@ -2134,9 +2197,14 @@ async function renderFrames({ seconds = 3, fps = 60, frames = Math.round(seconds
 
 /**
  * A film of the scene as a WebM file, every frame exactly 1/fps apart: `const film = await recordVideo({ seconds: 5, fps: 60 })`
- * gives a Blob (`saveVideo(film)` downloads it). It needs a browser that can encode video (WebCodecs); there is no sound in it.
+ * gives a Blob (`saveVideo(film)` downloads it). It needs a browser that can encode video (WebCodecs).
+ * WITH SOUND: `recordVideo({ seconds, fps, sound: scene })`, where the scene's sound is stepped (see renderFrames).
+ * The sound goes into the file as Opus, beginning on the first frame's first sample and ending with the last
+ * frame (`film.audio` is "opus"). A browser that cannot encode Opus gives the film without sound and the sound
+ * beside it as a WAV file of the same length, `film.sound` (`film.audio` is "wav"); saveVideo saves both.
+ * With no `sound`, or a scene that made none, the film has no sound track (`film.audio` is null).
  */
-async function recordVideo({ seconds = 5, fps = 60, bitrate = 0, canvas = null } = {}) {
+async function recordVideo({ seconds = 5, fps = 60, bitrate = 0, canvas = null, sound = null, audioBitrate = 160000 } = {}) {
   canvas ||= onlyCanvas()
   if (typeof VideoEncoder !== 'function' || typeof VideoFrame !== 'function') throw new Error('This browser cannot make a video file (it has no VideoEncoder). renderFrames() gives the frames one by one instead')
   // An encoder wants a picture with an even number of pixels each way.
@@ -2154,7 +2222,9 @@ async function recordVideo({ seconds = 5, fps = 60, bitrate = 0, canvas = null }
   })
   encoder.configure({ codec, width: w, height: h, framerate: fps, bitrate: bitrate || Math.round(w * h * fps * 0.12) })
   const even = Object.assign(document.createElement('canvas'), { width: w, height: h }).getContext('2d')
-  await renderFrames({ seconds, fps, canvas, onFrame: async (picture, n) => {
+  const track = soundTrack(audioBitrate)
+  const total = Math.round(seconds * fps)
+  await renderFrames({ seconds, fps, canvas, sound, onSound: (left, right, rate) => track.add(left, right, rate), onFrame: async (picture, n) => {
     even.drawImage(picture, 0, 0)
     const frame = new VideoFrame(even.canvas, { timestamp: Math.round(n * 1e6 / fps), duration: Math.round(1e6 / fps) })
     encoder.encode(frame, { keyFrame: n % Math.round(fps * 2) === 0 })
@@ -2165,13 +2235,102 @@ async function recordVideo({ seconds = 5, fps = 60, bitrate = 0, canvas = null }
   await encoder.flush()
   encoder.close()
   if (failed) throw new Error(`The video could not be encoded: ${failed.message}`)
-  const film = webm(chunks, { codec: codec === 'vp8' ? 'V_VP8' : 'V_VP9', width: w, height: h, fps })
+  const heard = await track.end()
+  const film = webm(chunks, { codec: codec === 'vp8' ? 'V_VP8' : 'V_VP9', width: w, height: h, fps, frames: total, audio: heard && heard.opus })
   film.codec = codec === 'vp8' ? 'vp8' : 'vp9'
+  film.audio = heard ? (heard.opus ? 'opus' : 'wav') : null
+  film.samples = heard ? heard.samples : 0
+  film.sampleRate = heard ? heard.sampleRate : 0
+  if (heard && heard.wav) film.sound = heard.wav
   return film
 }
 
-/** A WebM file from encoded frames: the few parts a player needs, each a name, a length and what is in it. */
-function webm(chunks, { codec, width, height, fps }) {
+/**
+ * A film's sound as it is made: Opus where the browser can encode it (WebCodecs' AudioEncoder, at 48000 samples
+ * a second), and otherwise kept as it is, to be handed over as a WAV file. `add(left, right, sampleRate)` takes
+ * each stretch; `end()` gives null (there was none), { opus: { packets, head, preSkip, samples } } or { wav }.
+ */
+function soundTrack(bitrate) {
+  let encoder = null, failed = null, rate = 0, samples = 0, fed = 0, begun = false, head = null
+  const packets = [], plain = []
+  const feed = (left, right) => {
+    const data = new Float32Array(left.length * 2)
+    data.set(left, 0); data.set(right, left.length)
+    const frame = new AudioData({ format: 'f32-planar', sampleRate: rate, numberOfFrames: left.length, numberOfChannels: 2, timestamp: Math.round(fed * 1e6 / rate), data })
+    fed += left.length
+    encoder.encode(frame)
+    frame.close()
+  }
+  return {
+    async add(left, right, sampleRate) {
+      if (!left.length) return
+      if (!begun) {
+        begun = true
+        rate = sampleRate
+        let can = false
+        try { can = rate === 48000 && typeof AudioEncoder === 'function' && typeof AudioData === 'function' && (await AudioEncoder.isConfigSupported({ codec: 'opus', sampleRate: rate, numberOfChannels: 2, bitrate })).supported } catch (e) { can = false }
+        if (can) {
+          encoder = new AudioEncoder({
+            output: (chunk, meta) => {
+              if (meta && meta.decoderConfig && meta.decoderConfig.description && !head) head = new Uint8Array(meta.decoderConfig.description.buffer || meta.decoderConfig.description).slice()
+              const data = new Uint8Array(chunk.byteLength); chunk.copyTo(data)
+              packets.push({ data, time: chunk.timestamp, duration: chunk.duration || 20000 })
+            },
+            error: (e) => { failed = e },
+          })
+          encoder.configure({ codec: 'opus', sampleRate: rate, numberOfChannels: 2, bitrate })
+        }
+      }
+      samples += left.length
+      // With no encoder the samples are kept as they are, for the WAV file.
+      if (!encoder) plain.push([left, right])
+      else if (!failed) {
+        feed(left, right)
+        while (encoder.encodeQueueSize > 24) await new Promise((done) => setTimeout(done, 1))
+      }
+    },
+    async end() {
+      if (!begun) return null
+      if (encoder && !failed) {
+        // A little silence after the end, so the encoder (which runs a few milliseconds behind) gives all of the sound.
+        feed(new Float32Array(1920), new Float32Array(1920))
+        try { await encoder.flush() } catch (e) { failed = failed || e }
+        try { encoder.close() } catch (e) { /* already closed */ }
+      }
+      if (encoder && !failed && packets.length) {
+        // The Opus header says how many samples at the start are the encoder's own run-in, which a player drops.
+        const preSkip = head && head.length >= 12 ? head[10] | (head[11] << 8) : 312
+        if (!head) { head = new Uint8Array([79, 112, 117, 115, 72, 101, 97, 100, 1, 2, preSkip & 255, preSkip >> 8, 0x80, 0xbb, 0, 0, 0, 0, 0]) }
+        return { opus: { packets, head, preSkip, samples }, samples, sampleRate: rate }
+      }
+      if (failed) console.warn(`visualfx.js: the film's sound could not be encoded (${failed.message || failed}), so it is given beside the film as a WAV file: film.sound`)
+      else console.info('visualfx.js: this browser cannot put sound into a WebM file (it has no Opus encoder), so the film\'s sound is given beside it as a WAV file: film.sound')
+      // An encoder that failed part-way took the samples with it: the film is then silent, and says so above.
+      if (encoder) return null
+      return { wav: wav(plain, rate), samples, sampleRate: rate }
+    },
+  }
+}
+
+/** A WAV file (16 bits, two channels) from stretches of samples. */
+function wav(parts, rate) {
+  const n = parts.reduce((sum, [l]) => sum + l.length, 0)
+  const out = new DataView(new ArrayBuffer(44 + n * 4))
+  const text = (at, t) => { for (let i = 0; i < t.length; i++) out.setUint8(at + i, t.charCodeAt(i)) }
+  text(0, 'RIFF'); out.setUint32(4, 36 + n * 4, true); text(8, 'WAVEfmt '); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 2, true)
+  out.setUint32(24, rate, true); out.setUint32(28, rate * 4, true); out.setUint16(32, 4, true); out.setUint16(34, 16, true); text(36, 'data'); out.setUint32(40, n * 4, true)
+  let at = 44
+  for (const [l, r] of parts) for (let i = 0; i < l.length; i++) { out.setInt16(at, Math.round(clamp(l[i], -1, 1) * 32767), true); out.setInt16(at + 2, Math.round(clamp(r[i], -1, 1) * 32767), true); at += 4 }
+  return new Blob([out.buffer], { type: 'audio/wav' })
+}
+
+/**
+ * A WebM file from encoded frames: the few parts a player needs, each a name, a length and what is in it.
+ * `audio` is Opus packets to go with them ({ packets, head, preSkip, samples }): a second track, whose first
+ * sample a player hears is the film's first (the encoder's run-in is declared, and dropped by the player) and
+ * whose last is cut where the film ends.
+ */
+function webm(chunks, { codec, width, height, fps, frames = 0, audio = null }) {
   const bytes = (n, size) => { const out = []; for (let i = size - 1; i >= 0; i--) out.push(Math.floor(n / 2 ** (8 * i)) & 255); return out }
   const whole = (n) => bytes(n, Math.max(1, Math.ceil(Math.log2(n + 1) / 8)))
   const float = (n) => [...new Uint8Array(new Float64Array([n]).buffer).reverse()]
@@ -2187,32 +2346,56 @@ function webm(chunks, { codec, width, height, fps }) {
     for (const b of body) { out.set(b, at); at += b.length }
     return out
   }
-  const head = part([0x1a, 0x45, 0xdf, 0xa3], part([0x42, 0x86], [1]), part([0x42, 0xf7], [1]), part([0x42, 0xf2], [4]), part([0x42, 0xf3], [8]), part([0x42, 0x82], text('webm')), part([0x42, 0x87], [2]), part([0x42, 0x85], [2]))
+  const head = part([0x1a, 0x45, 0xdf, 0xa3], part([0x42, 0x86], [1]), part([0x42, 0xf7], [1]), part([0x42, 0xf2], [4]), part([0x42, 0xf3], [8]), part([0x42, 0x82], text('webm')), part([0x42, 0x87], [4]), part([0x42, 0x85], [2]))
   const last = chunks.length ? chunks[chunks.length - 1].time : 0
-  const info = part([0x15, 0x49, 0xa9, 0x66], part([0x2a, 0xd7, 0xb1], whole(1000000)), part([0x4d, 0x80], text('visualfx.js')), part([0x57, 0x41], text('visualfx.js')), part([0x44, 0x89], float(last + 1000 / fps)))
-  const tracks = part([0x16, 0x54, 0xae, 0x6b], part([0xae], part([0xd7], [1]), part([0x73, 0xc5], [1]), part([0x83], [1]), part([0x86], text(codec)), part([0x23, 0xe3, 0x83], whole(Math.round(1e9 / fps))),
-    part([0xe0], part([0xb0], whole(width)), part([0xba], whole(height)))))
+  const length = frames ? frames * 1000 / fps : last + 1000 / fps
+  const info = part([0x15, 0x49, 0xa9, 0x66], part([0x2a, 0xd7, 0xb1], whole(1000000)), part([0x4d, 0x80], text('visualfx.js')), part([0x57, 0x41], text('visualfx.js')), part([0x44, 0x89], float(length)))
+  const picture = part([0xae], part([0xd7], [1]), part([0x73, 0xc5], [1]), part([0x83], [1]), part([0x86], text(codec)), part([0x23, 0xe3, 0x83], whole(Math.round(1e9 / fps))),
+    part([0xe0], part([0xb0], whole(width)), part([0xba], whole(height))))
+  // The sound's track: Opus, with its header, how much of its start is run-in (in nanoseconds) and how far back a player must begin to seek cleanly.
+  const sounds = audio ? [part([0xae], part([0xd7], [2]), part([0x73, 0xc5], [2]), part([0x83], [2]), part([0x86], text('A_OPUS')), part([0x56, 0xaa], whole(Math.round(audio.preSkip * 1e9 / 48000))), part([0x56, 0xbb], whole(80000000)),
+    part([0x63, 0xa2], audio.head), part([0xe1], part([0xb5], float(48000)), part([0x9f], [2])))] : []
+  const tracks = part([0x16, 0x54, 0xae, 0x6b], picture, ...sounds)
+  // Everything in the order of its time. A sound packet's time is where its samples begin, in milliseconds.
+  const blocks = chunks.map((c) => ({ track: 1, time: c.time, key: c.key, data: c.data }))
+  if (audio) {
+    // Packets past the film's end are left out, and the one that crosses it is cut there.
+    const end = audio.preSkip + audio.samples
+    let at = 0
+    for (const p of audio.packets) {
+      const size = Math.round(p.duration * 48 / 1000)
+      if (at >= end) break
+      blocks.push({ track: 2, time: Math.round(at / 48), key: true, data: p.data, cut: Math.max(0, at + size - end) })
+      at += size
+    }
+    blocks.sort((a, b) => a.time - b.time || a.track - b.track)
+  }
   // Frames are kept in groups that each begin with a whole picture: a player can start at any group.
   const clusters = []
   let group = null
-  for (const c of chunks) {
-    if (!group || c.key || c.time - group.time > 30000) { group = { time: c.time, blocks: [] }; clusters.push(group) }
+  for (const c of blocks) {
+    if (!group || (c.track === 1 && c.key) || c.time - group.time > 30000) { group = { time: c.time, blocks: [] }; clusters.push(group) }
     const block = new Uint8Array(4 + c.data.length)
-    block.set([0x81, ...bytes(c.time - group.time, 2), c.key ? 0x80 : 0], 0)
+    block.set([0x80 | c.track, ...bytes(c.time - group.time, 2), c.key && !c.cut ? 0x80 : 0], 0)
     block.set(c.data, 4)
-    group.blocks.push(part([0xa3], block))
+    // A packet that is cut short says by how much (nanoseconds), which needs the longer form of a block.
+    group.blocks.push(c.cut ? part([0xa0], part([0xa1], block), part([0x75, 0xa2], bytes(Math.round(c.cut * 1e9 / 48000), 4))) : part([0xa3], block))
   }
   const body = [info, tracks, ...clusters.map((g) => part([0x1f, 0x43, 0xb6, 0x75], part([0xe7], whole(g.time)), ...g.blocks))]
   return new Blob([head, part([0x18, 0x53, 0x80, 0x67], ...body)], { type: 'video/webm' })
 }
 
-/** Save a film (or any Blob) as a file the browser downloads: saveVideo(film, "my-scene.webm"). */
+/** Save a film (or any Blob) as a file the browser downloads: saveVideo(film, "my-scene.webm"). A film whose sound is beside it (film.sound) has that saved too, as a WAV file of the same name. */
 function saveVideo(film, name = 'scene.webm') {
-  const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(film), download: name })
-  document.body.append(link)
-  link.click()
-  link.remove()
-  setTimeout(() => URL.revokeObjectURL(link.href), 10000)
+  const put = (blob, called) => {
+    const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: called })
+    document.body.append(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000)
+  }
+  put(film, name)
+  if (film && film.sound) put(film.sound, name.replace(/\.[^.]*$/, '') + '.wav')
 }
 
 // The same functions with no canvas named: for a page (and a pictures.js scene) with one canvas.

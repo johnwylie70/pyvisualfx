@@ -2,7 +2,7 @@
 
 Effects for a [Pyctures](https://github.com/johnwylie70/pyctures) scene. Draw some shapes, then turn one on: a kaleidoscope, a glow, trails that spin away into a tunnel, an old television, a glitch. The page's graphics card does the work, so they are fast, and each is one line.
 
-It is the Python half of [visualfx.js](../visualfx.js), where every effect is shown and explained.
+It is the Python half of [visualfx.js](../visualfx.js). [Every effect](../visualfx.js/docs/effects.md) has a picture of each, the line that turns it on in Python, and its settings.
 
 ```python
 from pyctures import *
@@ -37,7 +37,7 @@ A kaleidoscope shows one slice of your picture, the one that starts at the middl
 
 ## The effects
 
-The same as the JavaScript library's, spelled Python's way: `kaleidoscope`, `mirror`, `tile`, `pixelate`, `waves`, `ripple`, `wobble`, `swirl`, `fisheye`, `tunnel`, `blur`, `zoom_blur`, `spin_blur`, `glow`, `trails`, `rgb_split`, `hue`, `saturate`, `brighten`, `contrast`, `invert`, `posterize`, `tint`, `duotone`, `colour_cycle`, `scanlines`, `crt`, `glitch`, `grain`, `vignette`, `edges`, `dots`, `letters`, and the backdrops that need no drawing: `plasma`, `starfield`, `metaballs`, `flow`. There are fifty-seven more, from `droste` and `tilt_shift` to `rain`, `snow`, `fire`, `matrix_rain`, `dither("gameboy")` and `spectrum_bars`: `effect_names()` lists them all, and `look_names()` the looks. `help(trails)` lists a function's settings and where they start; [visualfx.js's README](../visualfx.js/README.md) has a table and a picture of them all.
+The same as the JavaScript library's, spelled Python's way: `kaleidoscope`, `mirror`, `tile`, `pixelate`, `waves`, `ripple`, `wobble`, `swirl`, `fisheye`, `tunnel`, `blur`, `zoom_blur`, `spin_blur`, `glow`, `trails`, `rgb_split`, `hue`, `saturate`, `brighten`, `contrast`, `invert`, `posterize`, `tint`, `duotone`, `colour_cycle`, `scanlines`, `crt`, `glitch`, `grain`, `vignette`, `edges`, `dots`, `letters`, and the backdrops that need no drawing: `plasma`, `starfield`, `metaballs`, `flow`. There are ninety-four in all, from `droste` and `tilt_shift` to `rain`, `snow`, `fire`, `matrix_rain`, `dither("gameboy")` and `spectrum_bars`: `effect_names()` lists them all, and `look_names()` the looks. `help(trails)` lists a function's settings and where they start; [visualfx.js's README](../visualfx.js/README.md) has a table and a picture of them all.
 
 A backdrop is behind what you draw, so wipe the picture clear instead of painting it: `background()` with no colour.
 
@@ -89,7 +89,11 @@ What the program is given is in [visualfx.js's README](../visualfx.js/README.md#
 
 Python never touches the page: it may be in a worker, or on another computer. Each function here sends ONE command that turns the effect on in the page, and setting an attribute is one command more. The effects are run once for each frame Python sends, straight after its drawing, and their clock is the `dt` your `update(dt)` is given. So however slow Python is, the picture and its effects stay together, and a scene recorded a frame at a time gives exactly the frames it should.
 
-The page's half is `src/pyvisualfx/web/visualfx.js`: the JavaScript library itself, copied by `scripts/sync_js.py`, which also writes into the module the list of effects and their settings that Python's functions are made from. A Pyctures that has the effects built in (`H_EFFECTS`) needs neither copy: see [visualfx.js/docs/pyctures.md](../visualfx.js/docs/pyctures.md).
+**With Pyctures.** Pyctures carries this library (on its `effects` branch at the time of writing, as `web/visualfx/`): `from pyvisualfx import *` then needs nothing installed, the page loads its half only for a scene that imports it, and it works the same under `pyctures run`, in a built folder and in a single `.html` file. Such a Pyctures says so with `H_EFFECTS` (handle 13), and gives the frame's seconds as `S.dt`. This module then sends its commands to that handle and reads no file.
+
+**Without it** (an older Pyctures, under `pyctures run` only), the module puts the page's half in the page itself from `src/pyvisualfx/web/visualfx.js`, the JavaScript library copied here by `scripts/sync_js.py`, and reads the frame's seconds where Pyctures hands them to the scene. That script also writes into the module the list of effects and their settings that Python's functions are made from. A page built with `pyctures build` needs the Pyctures that carries the library.
+
+The music's numbers work both ways. A change of scene is seen through the effects only with the Pyctures that carries the library.
 
 ## Working on it
 
