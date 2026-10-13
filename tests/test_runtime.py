@@ -120,6 +120,13 @@ def test_looks_shaders_music_and_the_frame():
     p.S.dt = 1 / 30
     p.S.ending[0]()
     assert sent == [("frame", 1 / 30)]
+    # What a file draws as it starts is a frame with no time: the effects are run on it. What is sent that is no frame runs none.
+    del sent[:]
+    p.S.dt = 0.0
+    p.S.ending[0]()
+    p.S.dt = None
+    p.S.ending[0]()
+    assert sent == [("frame", 0.0)]
     # The music's numbers are asked for once, and are what the page last told.
     assert pyvisualfx.bass() == 0
     assert sent[1][0] == "report"
