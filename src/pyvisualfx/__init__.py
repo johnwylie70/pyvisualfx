@@ -1,7 +1,7 @@
-"""vfx: effects for a Pyctures scene. Draw some shapes, then turn one on.
+"""pyvisualfx: effects for a Pyctures scene. Draw some shapes, then turn one on.
 
     from pyctures import *
-    from vfx import *
+    from pyvisualfx import *
 
     kaleidoscope(8)                              # on, eight segments
     glow(0.8)                                    # bright things shine
@@ -17,7 +17,7 @@ drawn, 2D or 3D. Each has ``off()``, ``on()`` and ``remove()``, and ``amount``
 
 THE PAGE'S GRAPHICS CARD DOES THE WORK. Python never touches the page (it may be
 in a worker, or on another computer). Each function here sends ONE command that
-turns the effect on in the page, from ``web/vfx.js`` (the very file that is the
+turns the effect on in the page, from ``web/visualfx.js`` (the very file that is the
 JavaScript library; a Pyctures that has it built in says so with ``H_EFFECTS``,
 and then this module reads no other file), and Python keeps a small object that
 stands for it. Setting an attribute is one command more. The effects are run
@@ -314,7 +314,7 @@ def _key(name):
 def _library():
     """The page's half as text that can be made into a function: a page is given no file to load."""
     if _source[0] is None:
-        with open(os.path.join(_HERE, "web", "vfx.js"), encoding="utf-8") as f:
+        with open(os.path.join(_HERE, "web", "visualfx.js"), encoding="utf-8") as f:
             _source[0] = f.read().replace("export {", "return {")
     return _source[0]
 
@@ -367,13 +367,13 @@ def _watch_dt(p):
     """The seconds each frame is given (what update(dt) is told). A Pyctures that keeps it says so with S.dt;
     one that does not is listened to where it hands dt to the scene's functions."""
     call = getattr(p, "_call_frame_functions", None)
-    if hasattr(getattr(p, "S", None), "dt") or call is None or getattr(call, "_vfx", False):
+    if hasattr(getattr(p, "S", None), "dt") or call is None or getattr(call, "_visualfx", False):
         return
 
     def frame_functions(dt):
         _run.dt = dt
         return call(dt)
-    frame_functions._vfx = True
+    frame_functions._visualfx = True
     p._call_frame_functions = frame_functions
 
 

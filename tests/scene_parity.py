@@ -1,5 +1,5 @@
 from pyctures import *
-from vfx import *
+from pyvisualfx import *
 
 t = 0
 frames = 0

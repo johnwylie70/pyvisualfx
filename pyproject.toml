@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vfx-py"
+name = "pyvisualfx"
 version = "0.0.0"
 description = "Effects for a Pyctures scene, done by the graphics card: kaleidoscopes, glow, trails, blurs, old televisions, glitches and backdrops that need no drawing, each one line to turn on, with settings you can animate and tie to music."
 readme = "README.md"
@@ -32,4 +32,4 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-vfx = ["web/*.js"]
+pyvisualfx = ["web/*.js"]

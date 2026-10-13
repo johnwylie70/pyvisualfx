@@ -7,7 +7,7 @@
  *   PLAYWRIGHT=/path/to/node_modules/playwright node tests/test-browser.mjs
  *
  * Pyctures is the one installed, or its repository beside this one. PYTHON=python3.13 picks the Python.
- * Every Python twin of a demo in ../vfx.js/demos is run too, and must show its picture with no error.
+ * Every Python twin of a demo in ../visualfx.js/demos is run too, and must show its picture with no error.
  */
 import { spawn } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
@@ -79,8 +79,8 @@ const browser = await playwright.chromium.launch({ args: ['--mute-audio'] })
   check('the effects are run once for each frame Python sends, on Python\'s clock', Math.abs(got.stats.frames - got.clock[1]) <= 1 && Math.abs(got.stats.time - got.clock[0]) < 0.11 && got.clock[0] > 0, { stats: got.stats, clock: got.clock })
   await page.goto('about:blank')
   await page.goto(scene.url)
-  await page.route('**/vfx-same.js', (route) => route.fulfill({ path: join(ROOT, 'src', 'vfx', 'web', 'vfx.js'), contentType: 'text/javascript' }))
-  const same = await page.evaluate(SAME, { w: got.w, h: got.h, lib: '/vfx-same.js' })
+  await page.route('**/pyvisualfx-same.js', (route) => route.fulfill({ path: join(ROOT, 'src', 'pyvisualfx', 'web', 'visualfx.js'), contentType: 'text/javascript' }))
+  const same = await page.evaluate(SAME, { w: got.w, h: got.h, lib: '/pyvisualfx-same.js' })
   let sum = 0, most = 0
   for (let i = 0; i < same.length; i++) { const d = Math.abs(same[i] - got.data[i]); sum += d; if (d > most) most = d }
   check('the picture is the one the JavaScript library gives for the same drawing and effects', same.length === got.data.length && sum / same.length < 0.2 && most <= 24, { mean: sum / same.length, most, size: got.size })
@@ -89,7 +89,7 @@ const browser = await playwright.chromium.launch({ args: ['--mute-audio'] })
   scene.stop()
 }
 
-const demos = join(ROOT, '..', 'vfx.js', 'demos')
+const demos = join(ROOT, '..', 'visualfx.js', 'demos')
 for (const demo of existsSync(demos) ? readdirSync(demos).filter((d) => existsSync(join(demos, d, 'main.py'))) : []) {
   const scene = await run(join(demos, demo, 'main.py'))
   const page = await browser.newPage({ viewport: { width: 800, height: 500 }, deviceScaleFactor: 1 })

@@ -1,8 +1,8 @@
 /**
- * vfx.js: effects for a scene. Draw some shapes, then turn one on.
+ * visualfx.js: effects for a scene. Draw some shapes, then turn one on.
  *
- *   const { kaleidoscope, glow, trails } = await use("vfx.js")     (a pictures.js scene)
- *   import { kaleidoscope, glow, trails } from "./vfx.js"          (any page with one canvas)
+ *   const { kaleidoscope, glow, trails } = await use("visualfx.js")     (a pictures.js scene)
+ *   import { kaleidoscope, glow, trails } from "./visualfx.js"          (any page with one canvas)
  *
  *   kaleidoscope(8)                         on, eight segments
  *   glow(0.8)                               bright things shine
@@ -1417,7 +1417,7 @@ class Pipeline {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) {
       const log = gl.getShaderInfoLog(fs) || gl.getProgramInfoLog(program) || ''
       gl.deleteShader(vs); gl.deleteShader(fs); gl.deleteProgram(program)
-      throw new Error(said ? said(log, HEAD.split('\n').length - 1) : `vfx.js: the ${key} effect's program did not compile on this device:\n${log}`)
+      throw new Error(said ? said(log, HEAD.split('\n').length - 1) : `visualfx.js: the ${key} effect's program did not compile on this device:\n${log}`)
     }
     gl.deleteShader(vs); gl.deleteShader(fs)
     this.counts.programs++
@@ -2069,7 +2069,7 @@ function webm(chunks, { codec, width, height, fps }) {
   }
   const head = part([0x1a, 0x45, 0xdf, 0xa3], part([0x42, 0x86], [1]), part([0x42, 0xf7], [1]), part([0x42, 0xf2], [4]), part([0x42, 0xf3], [8]), part([0x42, 0x82], text('webm')), part([0x42, 0x87], [2]), part([0x42, 0x85], [2]))
   const last = chunks.length ? chunks[chunks.length - 1].time : 0
-  const info = part([0x15, 0x49, 0xa9, 0x66], part([0x2a, 0xd7, 0xb1], whole(1000000)), part([0x4d, 0x80], text('vfx.js')), part([0x57, 0x41], text('vfx.js')), part([0x44, 0x89], float(last + 1000 / fps)))
+  const info = part([0x15, 0x49, 0xa9, 0x66], part([0x2a, 0xd7, 0xb1], whole(1000000)), part([0x4d, 0x80], text('visualfx.js')), part([0x57, 0x41], text('visualfx.js')), part([0x44, 0x89], float(last + 1000 / fps)))
   const tracks = part([0x16, 0x54, 0xae, 0x6b], part([0xae], part([0xd7], [1]), part([0x73, 0xc5], [1]), part([0x83], [1]), part([0x86], text(codec)), part([0x23, 0xe3, 0x83], whole(Math.round(1e9 / fps))),
     part([0xe0], part([0xb0], whole(width)), part([0xba], whole(height)))))
   // Frames are kept in groups that each begin with a whole picture: a player can start at any group.

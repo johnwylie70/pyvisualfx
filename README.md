@@ -1,12 +1,12 @@
-# vfx for Python
+# pyvisualfx
 
 Effects for a [Pyctures](https://github.com/johnwylie70/pyctures) scene. Draw some shapes, then turn one on: a kaleidoscope, a glow, trails that spin away into a tunnel, an old television, a glitch. The page's graphics card does the work, so they are fast, and each is one line.
 
-It is the Python half of [vfx.js](../vfx.js), where every effect is shown and explained. (`vfx` is a working name.)
+It is the Python half of [visualfx.js](../visualfx.js), where every effect is shown and explained.
 
 ```python
 from pyctures import *
-from vfx import *
+from pyvisualfx import *
 
 glow(1)                 # bright things shine
 trails(1.5)             # and leave a trail that takes a second and a half to fade
@@ -37,7 +37,7 @@ A kaleidoscope shows one slice of your picture, the one that starts at the middl
 
 ## The effects
 
-The same as the JavaScript library's, spelled Python's way: `kaleidoscope`, `mirror`, `tile`, `pixelate`, `waves`, `ripple`, `wobble`, `swirl`, `fisheye`, `tunnel`, `blur`, `zoom_blur`, `spin_blur`, `glow`, `trails`, `rgb_split`, `hue`, `saturate`, `brighten`, `contrast`, `invert`, `posterize`, `tint`, `duotone`, `colour_cycle`, `scanlines`, `crt`, `glitch`, `grain`, `vignette`, `edges`, `dots`, `letters`, and the backdrops that need no drawing: `plasma`, `starfield`, `metaballs`, `flow`. There are fifty-seven more, from `droste` and `tilt_shift` to `rain`, `snow`, `fire`, `matrix_rain`, `dither("gameboy")` and `spectrum_bars`: `effect_names()` lists them all, and `look_names()` the looks. `help(trails)` lists a function's settings and where they start; [vfx.js's README](../vfx.js/README.md) has a table and a picture of them all.
+The same as the JavaScript library's, spelled Python's way: `kaleidoscope`, `mirror`, `tile`, `pixelate`, `waves`, `ripple`, `wobble`, `swirl`, `fisheye`, `tunnel`, `blur`, `zoom_blur`, `spin_blur`, `glow`, `trails`, `rgb_split`, `hue`, `saturate`, `brighten`, `contrast`, `invert`, `posterize`, `tint`, `duotone`, `colour_cycle`, `scanlines`, `crt`, `glitch`, `grain`, `vignette`, `edges`, `dots`, `letters`, and the backdrops that need no drawing: `plasma`, `starfield`, `metaballs`, `flow`. There are fifty-seven more, from `droste` and `tilt_shift` to `rain`, `snow`, `fire`, `matrix_rain`, `dither("gameboy")` and `spectrum_bars`: `effect_names()` lists them all, and `look_names()` the looks. `help(trails)` lists a function's settings and where they start; [visualfx.js's README](../visualfx.js/README.md) has a table and a picture of them all.
 
 A backdrop is behind what you draw, so wipe the picture clear instead of painting it: `background()` with no colour.
 
@@ -83,13 +83,13 @@ wave = shader("""
 wave.speed = 6
 ```
 
-What the program is given is in [vfx.js's README](../vfx.js/README.md#a-shader-of-your-own).
+What the program is given is in [visualfx.js's README](../visualfx.js/README.md#a-shader-of-your-own).
 
 ## How it works, and video
 
 Python never touches the page: it may be in a worker, or on another computer. Each function here sends ONE command that turns the effect on in the page, and setting an attribute is one command more. The effects are run once for each frame Python sends, straight after its drawing, and their clock is the `dt` your `update(dt)` is given. So however slow Python is, the picture and its effects stay together, and a scene recorded a frame at a time gives exactly the frames it should.
 
-The page's half is `src/vfx/web/vfx.js`: the JavaScript library itself, copied by `scripts/sync_js.py`, which also writes into the module the list of effects and their settings that Python's functions are made from. A Pyctures that has the effects built in (`H_EFFECTS`) needs neither copy: see [vfx.js/docs/pyctures.md](../vfx.js/docs/pyctures.md).
+The page's half is `src/pyvisualfx/web/visualfx.js`: the JavaScript library itself, copied by `scripts/sync_js.py`, which also writes into the module the list of effects and their settings that Python's functions are made from. A Pyctures that has the effects built in (`H_EFFECTS`) needs neither copy: see [visualfx.js/docs/pyctures.md](../visualfx.js/docs/pyctures.md).
 
 ## Working on it
 
