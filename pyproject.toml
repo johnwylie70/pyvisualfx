@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vfx-py"
+version = "0.0.0"
+description = "Effects for a Pyctures scene, done by the graphics card: kaleidoscopes, glow, trails, blurs, old televisions, glitches and backdrops that need no drawing, each one line to turn on, with settings you can animate and tie to music."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "John Wylie" }]
+keywords = ["effects", "shaders", "webgl", "kaleidoscope", "bloom", "glow", "blur", "trails", "crt", "glitch", "games", "education", "pyodide"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Education",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Games/Entertainment",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Education",
+]
+dependencies = ["pyctures>=0.2.0"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+vfx = ["web/*.js"]
