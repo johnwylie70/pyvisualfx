@@ -75,7 +75,7 @@ def test_every_effect_of_the_javascript_library_is_a_python_function_with_its_de
     for name in vfx.effect_names():
         fx = getattr(vfx, name)()
         assert fx.amount == 1 and fx.settings, name
-    assert len(sent) == len(vfx.effect_names()) >= 37
+    assert len(sent) == len(vfx.effect_names()) >= 94
     assert vfx.trails().length == 0.5 and vfx.glow().threshold == 0.5 and vfx.mirror().side == "left"
 
 

@@ -85,6 +85,12 @@ const PALETTES = {
   ice: ['#020818', '#103a6a', '#4a9ae0', '#b8e8ff', '#ffffff', '#4a9ae0'],
   lava: ['#1a0000', '#8a0a00', '#ff3a00', '#ff9a00', '#ffe27a', '#ff5a00'],
   mono: ['#000000', '#ffffff'],
+  thermal: ['#000000', '#20008c', '#cc0077', '#ff3000', '#ffd000', '#ffffff'],
+  aurora: ['#00ff9a', '#00b0ff', '#8a2be2', '#00ff9a'],
+  gameboy: ['#0f380f', '#306230', '#8bac0f', '#9bbc0f'],
+  c64: ['#000000', '#352879', '#6c5eb5', '#9a6759', '#b8c76f', '#ffffff'],
+  amiga: ['#000022', '#0055aa', '#ff8800', '#ffffff'],
+  pico: ['#1d2b53', '#7e2553', '#ff004d', '#ffa300', '#29adff', '#fff1e8'],
 }
 const palettes = new Map()
 function paletteOf(value) {
@@ -154,6 +160,20 @@ vec3 palette(float t) {
   float f = x - floor(x);
   return mix(pal[i], pal[(i + 1) % int(palCount)], f * f * (3.0 - 2.0 * f));
 }
+// A palette from its first colour to its last, once, without coming round again.
+vec3 ramp(float t) { return palette(clamp(t, 0.0, 0.999) * (palCount - 1.0) / palCount); }
+// Cells, as in a honeycomb drawn by hand: xy is the nearest cell's own point, z how far this place is from the cell's edge.
+vec3 cells(vec2 p) {
+  vec2 i = floor(p), best = i;
+  float d1 = 9.0, d2 = 9.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = i + vec2(x, y), o = g + vec2(hash(g), hash(g + vec2(37.0, 91.0)));
+    float d = distance(p, o);
+    if (d < d1) { d2 = d1; d1 = d; best = o; } else if (d < d2) d2 = d;
+  }
+  return vec3(best, d2 - d1);
+}
+float most(vec3 c) { return max(c.r, max(c.g, c.b)); }
 // Off the edge of the picture it is seen again, mirrored: no seams and no stretched borders.
 vec2 mirrored(vec2 q) { return 1.0 - abs(mod(q, 2.0) - 1.0); }
 vec4 look(vec2 q) { return texture(picture, mirrored(q)); }
@@ -504,6 +524,471 @@ vec3 backdrop(vec2 uv) {
   return palette(v * 1.6 + length(w) * 0.5 + t * 0.1) * (0.35 + 1.1 * v);
 }`, { backdrop: true })
 
+// --------------------------------------------------------------------------------------------
+// MORE OF THEM. The same words mean the same thing in every effect: `strength` how much, `size` how big (in
+// the scene's points), `speed`, `angle`, `colour`, and x and y for a place. An effect that looks at many
+// places for every pixel says so with `cost` ("some": a dozen or two; "heavy": more).
+const SOBEL = `
+  vec2 o = max(thick, size.x / resolution.x) / size;
+  float a = luma(texture(picture, uv + o * vec2(-1, -1)).rgb), b = luma(texture(picture, uv + o * vec2(0, -1)).rgb), cc = luma(texture(picture, uv + o * vec2(1, -1)).rgb);
+  float d = luma(texture(picture, uv + o * vec2(-1, 0)).rgb), f = luma(texture(picture, uv + o * vec2(1, 0)).rgb);
+  float g = luma(texture(picture, uv + o * vec2(-1, 1)).rgb), h = luma(texture(picture, uv + o * vec2(0, 1)).rgb), i = luma(texture(picture, uv + o * vec2(1, 1)).rgb);
+  float gx = cc + 2.0 * f + i - a - 2.0 * d - g, gy = g + 2.0 * h + i - a - 2.0 * b - cc;
+  float edge = clamp(length(vec2(gx, gy)) * 0.5 * strength, 0.0, 1.0);`
+
+// --- shapes of the picture
+define('droste', ['zoom'], { zoom: num(3, 1.2, 10), twist: whole(1, 0, 4), speed: num(0.3, -5, 5), x: place(), y: place() }, `
+vec4 effect(vec2 uv) {
+  ${PLACE}
+  float m = length(size) * 0.5, r = max(length(p), 0.001) / m, a = atan(p.y, p.x);
+  // The picture inside itself, smaller each time, for ever: with a twist it winds in as a spiral.
+  float k = pow(zoom, fract(log(r) / log(zoom) + a / TAU * twist - time * speed)) / zoom;
+  return look((c + k * m * vec2(cos(a), sin(a))) / size);
+}`)
+define('rotozoom', ['speed'], { speed: num(0.5, -5, 5), zoom: num(1.5, 0.2, 8) }, `
+vec4 effect(vec2 uv) {
+  vec2 p = turn(uv * size - size * 0.5, time * speed) * (zoom + 0.6 * zoom * sin(time * speed * 0.7));
+  return texture(picture, fract(p / size + 0.5));
+}`)
+define('hexagons', ['size'], { size: num(14, 3, 100) }, `
+vec4 effect(vec2 uv) {
+  const vec2 s = vec2(1.0, 1.7320508);
+  vec2 p = uv * size / big, a = mod(p, s) - s * 0.5, b = mod(p - s * 0.5, s) - s * 0.5;
+  return texture(picture, (p - (dot(a, a) < dot(b, b) ? a : b)) * big / size);
+}`, { rename: { size: 'big' } })
+define('glassTiles', ['size'], { size: num(40, 6, 300), strength: num(0.4, 0, 1) }, `
+vec4 effect(vec2 uv) { vec2 p = uv * size; return look((p + (fract(p / big) - 0.5) * big * strength) / size); }`, { rename: { size: 'big' } })
+define('frosted', ['size'], { size: num(6, 0, 60) }, `
+vec4 effect(vec2 uv) {
+  vec2 o = vec2(hash(uv * resolution), hash(uv * resolution + vec2(71.0, 13.0))) - 0.5;
+  return look((uv * size + o * 2.0 * big) / size);
+}`, { rename: { size: 'big' } })
+define('heatHaze', ['size'], { size: num(5, 0, 60), scale: num(40, 5, 400), speed: num(1, -5, 5) }, `
+vec4 effect(vec2 uv) {
+  vec2 p = uv * size;
+  p.x += big * 2.0 * (noise(vec2(p.x / scale, p.y / scale + time * speed * 3.0)) - 0.5);
+  p.y += big * (noise(vec2(p.x / scale + 9.0, p.y / scale + time * speed * 3.0)) - 0.5);
+  return look(p / size);
+}`, { rename: { size: 'big' } })
+define('caustics', ['strength'], { strength: num(0.5, 0, 2), scale: num(120, 20, 600), speed: num(0.5, -5, 5), colour: colour('#bfe8ff') }, `
+vec4 effect(vec2 uv) {
+  vec2 q = uv * size / scale, w = q;
+  float t = time * speed;
+  for (int i = 0; i < 3; i++) w += 0.6 * vec2(sin(w.y * 1.7 + t * (1.0 + 0.3 * float(i))), cos(w.x * 1.9 - t * 1.1));
+  // Light gathered into a net of bright lines, as the sun is on the floor of a pool.
+  float v = pow(0.5 + 0.5 * sin(w.x * 2.0) * sin(w.y * 2.0), 6.0);
+  return vec4(look(uv + (w - q) * 0.004 * strength).rgb + colour * v * strength, 1.0);
+}`)
+define('shake', ['strength'], { strength: num(10, 0, 200), speed: num(25, 1, 100) }, `
+vec4 effect(vec2 uv) {
+  vec2 o = (vec2(noise(vec2(time * speed, 1.0)), noise(vec2(7.0, time * speed))) - 0.5) * 2.0 * strength;
+  return look((uv * size + o) / size);
+}`)
+define('punch', ['strength'], { strength: num(0.15, -0.9, 4), x: place(), y: place() }, `
+vec4 effect(vec2 uv) { ${PLACE} return look((c + p / (1.0 + strength)) / size); }`)
+
+// --- blur and light
+define('motionBlur', ['size'], { size: num(24, 0, 300), angle: angle(0) }, `
+vec4 effect(vec2 uv) {
+  vec2 d = big * vec2(cos(angle), sin(angle)) / size;
+  float j = hash(uv * resolution);
+  vec3 sum = vec3(0.0);
+  for (int i = 0; i < 14; i++) sum += look(uv + d * ((float(i) + j) / 14.0 - 0.5)).rgb;
+  return vec4(sum / 14.0, 1.0);
+}`, { rename: { size: 'big' }, cost: 'some' })
+define('tiltShift', ['strength'], { strength: num(8, 0, 60), size: num(70, 5, 1000), y: place() }, `
+vec4 effect(vec2 uv) {
+  float r = strength * smoothstep(band, band * 2.5, abs(uv.y * size.y - y));
+  if (r < 0.3) return texture(picture, uv);
+  // Sixteen places on a spiral out from this one: a small round blur that grows away from the band in focus.
+  vec3 sum = vec3(0.0);
+  float j = hash(uv * resolution) * TAU;
+  for (int i = 0; i < 16; i++) sum += texture(picture, uv + sqrt((float(i) + 0.5) / 16.0) * r * vec2(cos(float(i) * 2.39996 + j), sin(float(i) * 2.39996 + j)) / size).rgb;
+  return vec4(sum / 16.0, 1.0);
+}`, { rename: { size: 'band' }, cost: 'some' })
+define('lightRays', ['strength'], { strength: num(0.7, 0, 3), size: num(0.6, 0, 1), threshold: num(0.6, 0, 1), x: place(), y: place() }, `
+vec4 effect(vec2 uv) {
+  vec2 d = (uv - vec2(x, y) / size) * reach / 22.0, q = uv - d * hash(uv * resolution);
+  vec3 sum = vec3(0.0);
+  float w = 1.0;
+  for (int i = 0; i < 22; i++) {
+    q -= d;
+    vec3 s = texture(picture, q).rgb;
+    sum += s * smoothstep(threshold - 0.1, threshold + 0.1, most(s)) * w;
+    w *= 0.93;
+  }
+  return vec4(texture(picture, uv).rgb + sum * strength * 0.11, 1.0);
+}`, { rename: { size: 'reach' }, cost: 'some' })
+define('streaks', ['strength'], { strength: num(0.6, 0, 3), size: num(120, 0, 800), threshold: num(0.6, 0, 1), colour: colour('#88aaff') }, `
+vec3 lit(vec2 q) { vec3 s = texture(picture, q).rgb; return s * smoothstep(threshold - 0.1, threshold + 0.1, most(s)); }
+vec4 effect(vec2 uv) {
+  vec3 sum = vec3(0.0);
+  float j = hash(uv * resolution);
+  for (int i = 0; i < 12; i++) {
+    float f = (float(i) + j) / 12.0;
+    sum += (lit(uv + vec2(f * big / size.x, 0.0)) + lit(uv - vec2(f * big / size.x, 0.0))) * (1.0 - f);
+  }
+  return vec4(texture(picture, uv).rgb + sum * colour * strength * 0.16, 1.0);
+}`, { rename: { size: 'big' }, cost: 'some' })
+define('softFocus', ['strength'], { strength: num(0.6, 0, 1), size: num(6, 0, 60) }, `
+vec4 effect(vec2 uv) {
+  vec3 c = texture(picture, uv).rgb, b = vec3(0.0);
+  for (int i = 0; i < 8; i++) b += texture(picture, uv + big * vec2(cos(float(i) * 0.7854), sin(float(i) * 0.7854)) * (0.5 + 0.5 * float(i & 1)) / size).rgb;
+  return vec4(1.0 - (1.0 - c) * (1.0 - b / 8.0 * strength), 1.0);
+}`, { rename: { size: 'big' } })
+
+// --- what was drawn stays: these read their own last frame
+define('smear', ['length'], { length: num(3, 0, 30), size: num(40, 0, 400), scale: num(150, 20, 1000) }, `
+vec4 effect(vec2 uv) {
+  vec2 p = uv * size;
+  // The paint is pushed a little each frame along a slow current, and thins as it goes.
+  float a = noise(p / scale + time * 0.1) * TAU * 2.0;
+  vec3 old = texture(previous, (p - vec2(cos(a), sin(a)) * big * dt) / size).rgb * pow(0.1, dt / max(len, 0.01));
+  return vec4(max(texture(picture, uv).rgb, max(old - 0.0015, 0.0)), 1.0);
+}`, { rename: { size: 'big', length: 'len' }, feedback: true })
+define('stutter', ['speed'], { speed: num(8, 0.5, 60) }, `
+vec4 effect(vec2 uv) {
+  // A new picture only so many times a second: between them the last one is held.
+  bool fresh = floor(time * speed + 0.001) != floor((time - dt) * speed + 0.001) || frame < 1.5;
+  return fresh ? texture(picture, uv) : texture(previous, uv);
+}`, { feedback: true })
+
+// --- colours
+define('gradientMap', ['palette'], { palette: pal('sunset') }, `
+vec4 effect(vec2 uv) { return vec4(ramp(luma(texture(picture, uv).rgb)), 1.0); }`)
+define('thermal', [], { palette: pal('thermal') }, `
+vec4 effect(vec2 uv) { return vec4(ramp(luma(texture(picture, uv).rgb)), 1.0); }`)
+define('nightVision', ['strength'], { strength: num(1.6, 0, 6) }, `
+vec4 effect(vec2 uv) {
+  float l = pow(luma(texture(picture, uv).rgb) * strength, 0.8);
+  l += (hash(vec3(floor(uv * resolution / 2.0), floor(time * 30.0 + 0.001))) - 0.5) * 0.14;
+  l *= 0.85 + 0.15 * cos(TAU * uv.y * size.y / 3.0);
+  return vec4(vec3(0.1, 1.0, 0.25) * l * (1.0 - smoothstep(0.35, 0.75, length(uv - 0.5))), 1.0);
+}`)
+define('sepia', ['strength'], { strength: num(1, 0, 1) }, `
+vec4 effect(vec2 uv) {
+  vec3 c = texture(picture, uv).rgb;
+  return vec4(mix(c, vec3(dot(c, vec3(0.393, 0.769, 0.189)), dot(c, vec3(0.349, 0.686, 0.168)), dot(c, vec3(0.272, 0.534, 0.131))), strength), 1.0);
+}`)
+define('threshold', ['level'], { level: num(0.5, 0, 1), dark: colour('black'), light: colour('white') }, `
+vec4 effect(vec2 uv) { return vec4(mix(dark, light, smoothstep(level - 0.01, level + 0.01, luma(texture(picture, uv).rgb))), 1.0); }`)
+define('solarize', ['level'], { level: num(0.5, 0, 1) }, `
+vec4 effect(vec2 uv) { vec3 c = texture(picture, uv).rgb; return vec4(mix(c, 1.0 - c, step(vec3(level), c)), 1.0); }`)
+define('colourBleed', ['size'], { size: num(10, 0, 100) }, `
+vec4 effect(vec2 uv) {
+  vec3 c = texture(picture, uv).rgb, s = vec3(0.0);
+  for (int i = 0; i < 6; i++) s += texture(picture, uv - vec2(float(i) * big / 6.0 / size.x, 0.0)).rgb;
+  s /= 6.0;
+  return vec4(luma(c) + (s - luma(s)) * 1.2, 1.0);
+}`, { rename: { size: 'big' } })
+define('rainbowEdges', ['strength'], { strength: num(2, 0, 10), size: num(1.5, 0.5, 20), speed: num(0.1, -5, 5) }, `
+vec4 effect(vec2 uv) {${SOBEL}
+  vec3 tone = 0.5 + 0.5 * cos(TAU * (atan(gy, gx) / TAU + time * speed + vec3(0.0, 0.33, 0.67)));
+  return vec4(mix(texture(picture, uv).rgb, tone, edge), 1.0);
+}`, { rename: { size: 'thick' } })
+
+// --- old computers and screens
+define('dither', ['palette'], { palette: pal('gameboy'), size: num(2, 1, 40), strength: num(0.35, 0, 1) }, `
+const int BAYER[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+vec4 effect(vec2 uv) {
+  float s = max(big, size.x / resolution.x);
+  vec2 cell = floor(uv * size / s);
+  vec3 c = texture(picture, (cell + 0.5) * s / size).rgb;
+  // A pattern of sixteen thresholds nudges each pixel up or down, so a few colours pass for many.
+  c += ((float(BAYER[int(mod(cell.x, 4.0)) + int(mod(cell.y, 4.0)) * 4]) + 0.5) / 16.0 - 0.5) * strength;
+  vec3 best = pal[0];
+  float closest = 9.0;
+  for (int i = 0; i < 6; i++) {
+    if (float(i) >= palCount) break;
+    float d = distance(c, pal[i]);
+    if (d < closest) { closest = d; best = pal[i]; }
+  }
+  return vec4(best, 1.0);
+}`, { rename: { size: 'big' } })
+define('interlace', ['strength'], { strength: num(0.6, 0, 1), size: num(2, 1, 20) }, `
+vec4 effect(vec2 uv) {
+  float row = floor(uv.y * size.y / max(gap, size.y / resolution.y)) + floor(time * 30.0 + 0.001);
+  return vec4(texture(picture, uv).rgb * (1.0 - strength * mod(row, 2.0)), 1.0);
+}`, { rename: { size: 'gap' } })
+define('led', ['size'], { size: num(8, 3, 80) }, `
+vec4 effect(vec2 uv) {
+  vec2 p = uv * size, mid = (floor(p / big) + 0.5) * big;
+  float aa = size.x / resolution.x;
+  vec3 c = texture(picture, mid / size).rgb;
+  return vec4(c * 1.25 * (1.0 - smoothstep(big * 0.36 - aa, big * 0.36 + aa, length(p - mid))) + 0.025, 1.0);
+}`, { rename: { size: 'big' } })
+
+// --- drawn, printed and painted
+define('emboss', ['strength'], { strength: num(2, 0, 10), angle: angle(135), size: num(1.5, 0.5, 20) }, `
+vec4 effect(vec2 uv) {
+  vec2 o = max(thick, size.x / resolution.x) * vec2(cos(angle), sin(angle)) / size;
+  return vec4(vec3(0.5 + (luma(texture(picture, uv + o).rgb) - luma(texture(picture, uv - o).rgb)) * strength), 1.0);
+}`, { rename: { size: 'thick' } })
+define('sharpen', ['strength'], { strength: num(1, 0, 5), size: num(1, 0.5, 10) }, `
+vec4 effect(vec2 uv) {
+  vec2 o = max(thick, size.x / resolution.x) / size;
+  vec3 c = texture(picture, uv).rgb;
+  vec3 round_ = texture(picture, uv + vec2(o.x, 0.0)).rgb + texture(picture, uv - vec2(o.x, 0.0)).rgb + texture(picture, uv + vec2(0.0, o.y)).rgb + texture(picture, uv - vec2(0.0, o.y)).rgb;
+  return vec4(c + (c - round_ * 0.25) * strength, 1.0);
+}`, { rename: { size: 'thick' } })
+define('sketch', ['strength'], { strength: num(3, 0, 10), size: num(1.2, 0.5, 20), paper: colour('#f4efe2'), colour: colour('#2a2a33') }, `
+vec4 effect(vec2 uv) {${SOBEL}
+  vec2 p = uv * size;
+  // Shading is pencil strokes on a slant, closer together where the picture is darker.
+  float shade = 1.0 - luma(texture(picture, uv).rgb);
+  float strokes = step(fract((p.x + p.y) / 5.0 + 0.3 * noise(p / 7.0)), shade * 0.6) * step(0.35, shade);
+  return vec4(mix(paper, colour, clamp(edge + strokes * 0.45, 0.0, 1.0)), 1.0);
+}`, { rename: { size: 'thick' } })
+define('cartoon', ['levels'], { levels: whole(4, 2, 12), strength: num(2.5, 0, 10), size: num(1.5, 0.5, 20) }, `
+vec4 effect(vec2 uv) {${SOBEL}
+  vec3 c = texture(picture, uv).rgb;
+  float l = max(most(c), 0.001), n = max(2.0, floor(levels + 0.5));
+  return vec4(c / l * (floor(l * n + 0.5) / n) * (1.0 - smoothstep(0.25, 0.6, edge)), 1.0);
+}`, { rename: { size: 'thick' } })
+define('stainedGlass', ['size'], { size: num(40, 8, 400), colour: colour('#101010') }, `
+vec4 effect(vec2 uv) {
+  vec3 v = cells(uv * size / big);
+  return vec4(mix(colour, texture(picture, v.xy * big / size).rgb * 1.1, smoothstep(0.03, 0.09, v.z)), 1.0);
+}`, { rename: { size: 'big' } })
+define('crosshatch', ['size'], { size: num(6, 2, 60), colour: colour('#1a1a22'), paper: colour('#f6f2e8') }, `
+vec4 effect(vec2 uv) {
+  vec2 p = uv * size;
+  float l = luma(texture(picture, uv).rgb), a = fract((p.x + p.y) / big), b = fract((p.x - p.y) / big), ink = 0.0;
+  // A darker place has more sets of lines across it.
+  if (l < 0.8) ink = max(ink, step(a, 0.22));
+  if (l < 0.55) ink = max(ink, step(b, 0.22));
+  if (l < 0.3) ink = max(ink, step(fract(a + 0.5), 0.22));
+  if (l < 0.12) ink = max(ink, step(fract(b + 0.5), 0.22));
+  return vec4(mix(paper, colour, ink), 1.0);
+}`, { rename: { size: 'big' } })
+define('oil', ['size'], { size: num(4, 1, 30) }, `
+vec4 effect(vec2 uv) {
+  // Four patches round each place, and the colour of the calmest one: edges stay and everything else is smoothed like paint.
+  vec2 o = max(big, size.x / resolution.x) / 2.0 / size;
+  vec3 best = vec3(0.0);
+  float least = 1e9;
+  for (int k = 0; k < 4; k++) {
+    vec2 corner = vec2(k % 2 == 0 ? -1.0 : 1.0, k < 2 ? -1.0 : 1.0);
+    vec3 mean = vec3(0.0);
+    float sq = 0.0;
+    for (int j = 0; j < 3; j++) for (int i = 0; i < 3; i++) {
+      vec3 c = texture(picture, uv + corner * vec2(i, j) * o).rgb;
+      mean += c;
+      sq += dot(c, c);
+    }
+    mean /= 9.0;
+    float spread = sq / 9.0 - dot(mean, mean);
+    if (spread < least) { least = spread; best = mean; }
+  }
+  return vec4(best, 1.0);
+}`, { rename: { size: 'big' }, cost: 'heavy' })
+
+// --- things in front of the picture
+define('dust', ['strength'], { strength: num(0.5, 0, 1), seed: whole(1, 0, 9999) }, `
+vec4 effect(vec2 uv) {
+  vec3 c = texture(picture, uv).rgb;
+  float t = floor(time * 12.0 + 0.001) + seed * 17.0;
+  vec2 cell = floor(uv * vec2(8.0, 5.0));
+  if (hash(vec3(cell, t)) > 1.0 - 0.1 * strength) {
+    vec2 at = (cell + 0.2 + 0.6 * vec2(hash(vec3(cell, t + 3.0)), hash(vec3(cell, t + 5.0)))) / vec2(8.0, 5.0);
+    c *= smoothstep(0.0, 1.0, length((uv - at) * size) / (1.0 + 2.5 * hash(vec3(cell, t + 9.0))) - 0.2);
+  }
+  // A scratch or two down the film, never in the same place twice.
+  for (int k = 0; k < 2; k++) {
+    float at = hash(vec2(t, float(k)));
+    if (hash(vec2(t, float(k) + 5.0)) < 0.35 * strength) c += 0.3 * (1.0 - smoothstep(0.0, 1.2, abs(uv.x - at) * size.x)) * step(hash(vec2(floor(uv.y * 14.0), t)), 0.8);
+  }
+  return vec4(c, 1.0);
+}`)
+define('lightLeaks', ['strength'], { strength: num(0.6, 0, 2), speed: num(0.2, -5, 5), colour: colour('#ff7a2a') }, `
+vec4 effect(vec2 uv) {
+  float t = time * speed;
+  float v = pow(noise(vec2(uv.y * 1.5 + t, t * 0.7)), 2.0) * (1.0 - smoothstep(0.0, 0.55, uv.x)) + pow(noise(vec2(uv.y * 1.2 - t * 0.8, 9.0 + t * 0.5)), 2.0) * smoothstep(0.55, 1.0, uv.x);
+  return vec4(1.0 - (1.0 - texture(picture, uv).rgb) * (1.0 - clamp(colour * v * strength * 2.2, 0.0, 1.0)), 1.0);
+}`)
+define('rain', ['strength'], { strength: num(0.6, 0, 2), speed: num(1, 0, 5), angle: angle(12, -80, 80) }, `
+vec4 effect(vec2 uv) {
+  vec2 p = turn(uv * size, angle);
+  float sum = 0.0;
+  for (int k = 0; k < 3; k++) {
+    float f = 1.0 + float(k) * 0.6, w = 9.0 / f, h = 150.0 / f, col = floor(p.x / w);
+    if (hash(vec2(col, float(k))) > 0.35) continue;
+    float y = fract((p.y - time * speed * 900.0 / f) / h + hash(vec2(col, float(k) + 3.0)));
+    sum += smoothstep(0.75, 1.0, y) * (1.0 - smoothstep(0.1, 0.25, abs(fract(p.x / w) - 0.5))) / f;
+  }
+  return vec4(texture(picture, uv).rgb + vec3(0.7, 0.8, 1.0) * sum * strength * 0.5, 1.0);
+}`)
+define('snow', ['strength'], { strength: num(0.8, 0, 2), speed: num(1, 0, 5), size: num(3, 0.5, 20) }, `
+vec4 effect(vec2 uv) {
+  vec2 p = uv * size;
+  float sum = 0.0;
+  for (int k = 0; k < 4; k++) {
+    float f = 1.0 + float(k) * 0.5, s = 70.0 / f;
+    vec2 q = (p + vec2(14.0 * sin(time * 0.7 + float(k) * 2.0), -time * speed * (60.0 - 9.0 * float(k)))) / s, cell = floor(q);
+    vec2 at = 0.2 + 0.6 * vec2(hash(vec3(cell, float(k))), hash(vec3(cell, float(k) + 9.0)));
+    float r = big * (0.5 + 0.5 * hash(vec3(cell, 4.0))) / f / s;
+    sum += (1.0 - smoothstep(r * 0.4, r, distance(fract(q), at))) / (0.6 + 0.4 * f);
+  }
+  return vec4(texture(picture, uv).rgb + sum * strength, 1.0);
+}`, { rename: { size: 'big' } })
+define('bokeh', ['strength'], { strength: num(0.5, 0, 2), size: num(30, 4, 200), speed: num(0.3, -5, 5) }, `
+vec4 effect(vec2 uv) {
+  vec2 p = uv * size;
+  vec3 sum = vec3(0.0);
+  for (int k = 0; k < 2; k++) {
+    float s = big * (3.0 + float(k));
+    vec2 q = (p + vec2(float(k) * 37.0, time * speed * 40.0 * (1.0 + float(k)))) / s, cell = floor(q);
+    if (hash(vec3(cell, float(k))) > 0.6) continue;
+    vec2 at = 0.3 + 0.4 * vec2(hash(vec3(cell, 2.0)), hash(vec3(cell, 3.0)));
+    float r = (0.5 + 0.5 * hash(vec3(cell, 4.0))) * big / s, d = distance(fract(q), at);
+    // A disc of light with a brighter rim, as a lamp out of focus is.
+    sum += (0.5 + 0.5 * cos(TAU * (hash(vec3(cell, 5.0)) + vec3(0.0, 0.33, 0.67)))) * (1.0 - smoothstep(r * 0.9, r, d)) * (0.5 + 0.5 * smoothstep(r * 0.6, r * 0.9, d));
+  }
+  return vec4(texture(picture, uv).rgb + sum * strength * 0.5, 1.0);
+}`, { rename: { size: 'big' } })
+define('fog', ['strength'], { strength: num(0.6, 0, 1), speed: num(0.3, -5, 5), scale: num(220, 20, 2000), colour: colour('#dfe6ee') }, `
+vec4 effect(vec2 uv) {
+  float v = fbm(uv * size / scale + vec2(time * speed, 0.0));
+  return vec4(mix(texture(picture, uv).rgb, colour, strength * smoothstep(0.2, 0.8, v) * (0.4 + 0.6 * uv.y)), 1.0);
+}`)
+define('lightning', ['strength'], { strength: num(1, 0, 3), speed: num(1, 0, 10), seed: whole(1, 0, 9999) }, `
+vec4 effect(vec2 uv) {
+  float t = time * speed * 0.7 + seed * 13.0, f = fract(t);
+  float flash = step(hash(vec2(floor(t), 1.0)), 0.5) * exp(-f * 14.0) * (0.6 + 0.4 * sin(f * 90.0));
+  return vec4(texture(picture, uv).rgb * (1.0 + flash * strength) + vec3(0.75, 0.82, 1.0) * flash * strength * 0.6, 1.0);
+}`)
+
+// --- more backdrops
+define('warp', ['palette'], { palette: pal('neon'), speed: num(1, -10, 10), x: place(), y: place() }, `
+vec3 backdrop(vec2 uv) {
+  ${PLACE}
+  float r = length(p) / (min(size.x, size.y) * 0.5), a = atan(p.y, p.x) / TAU;
+  float z = 1.0 / max(r, 0.02) + time * speed * 2.0;
+  return palette(z * 0.05 + a) * (0.3 + 0.7 * mod(floor(a * 16.0) + floor(z * 2.0), 2.0)) * smoothstep(0.0, 0.6, r);
+}`, { backdrop: true })
+define('voronoi', ['palette'], { palette: pal('candy'), speed: num(0.3, -5, 5), scale: num(1, 0.1, 10) }, `
+vec3 backdrop(vec2 uv) {
+  vec2 q = (uv * size - size * 0.5) / min(size.x, size.y) * 5.0 * scale;
+  float t = time * speed;
+  q += 0.35 * vec2(sin(t + q.y * 0.9), cos(t * 0.8 + q.x * 0.9));
+  vec3 v = cells(q);
+  return palette(hash(v.xy * 91.0) + t * 0.05) * smoothstep(0.0, 0.1, v.z) * (0.7 + 0.3 * smoothstep(0.1, 0.5, v.z));
+}`, { backdrop: true })
+define('moire', ['colour'], { colour: colour('white'), speed: num(0.3, -5, 5), scale: num(1, 0.1, 10) }, `
+vec3 backdrop(vec2 uv) {
+  vec2 q = (uv * size - size * 0.5) / min(size.x, size.y);
+  float t = time * speed;
+  float v = sin(length(q - 0.3 * vec2(sin(t), cos(t * 1.3))) * 90.0 * scale) * sin(length(q + 0.3 * vec2(cos(t * 0.7), sin(t * 1.1))) * 90.0 * scale);
+  return colour * smoothstep(-0.15, 0.15, v);
+}`, { backdrop: true })
+define('interference', ['palette'], { palette: pal('ocean'), speed: num(0.5, -5, 5), scale: num(1, 0.1, 10) }, `
+vec3 backdrop(vec2 uv) {
+  vec2 q = (uv * size - size * 0.5) / min(size.x, size.y);
+  float t = time * speed, v = 0.0;
+  for (int i = 0; i < 4; i++) {
+    float k = float(i);
+    v += sin(length(q - 0.45 * vec2(sin(t * (0.5 + 0.2 * k) + k * 2.0), cos(t * (0.4 + 0.15 * k) + k))) * 34.0 * scale - t * 4.0);
+  }
+  return palette(v * 0.125 + 0.5);
+}`, { backdrop: true })
+define('aurora', ['palette'], { palette: pal('aurora'), speed: num(0.3, -5, 5) }, `
+vec3 backdrop(vec2 uv) {
+  float t = time * speed;
+  vec3 sum = vec3(0.004, 0.012, 0.04) * (1.0 + uv.y);
+  for (int i = 0; i < 3; i++) {
+    float k = float(i), y = 0.3 + 0.12 * k + 0.09 * sin(uv.x * 3.0 + t * (1.0 + 0.3 * k) + k * 2.0) + 0.04 * sin(uv.x * 9.0 - t * 1.7);
+    float d = uv.y - y;
+    // A curtain: sharp along its lower edge, fading upwards, with rays that shift.
+    float band = (d < 0.0 ? exp(d * 9.0) : exp(-d * 60.0)) * (0.45 + 0.55 * noise(vec2(uv.x * 40.0 + k * 7.0, t * 2.0)));
+    sum += palette(k / 3.0 + 0.1 * sin(t + uv.x * 2.0)) * band * 0.8;
+  }
+  return sum + step(0.9985, hash(floor(uv * resolution / 2.0))) * 0.6;
+}`, { backdrop: true })
+define('fire', ['palette'], { palette: pal('fire'), speed: num(1, -5, 5), scale: num(1, 0.1, 10) }, `
+vec3 backdrop(vec2 uv) {
+  vec2 q = uv * size / min(size.x, size.y) * 3.0 * scale;
+  float t = time * speed;
+  float v = fbm(vec2(q.x, q.y + t * 2.2)) * 0.6 + fbm(vec2(q.x * 2.0 + 7.0, q.y * 2.0 + t * 3.5)) * 0.4;
+  return ramp(clamp(v * 2.0 - (1.0 - uv.y) * 1.5 + 0.15, 0.0, 1.0));
+}`, { backdrop: true })
+define('clouds', ['colour'], { colour: colour('#3a8fdc'), speed: num(0.1, -5, 5), scale: num(1, 0.1, 10) }, `
+vec3 backdrop(vec2 uv) {
+  vec2 q = uv * size / min(size.x, size.y) * 2.5 * scale + vec2(time * speed, 0.0);
+  float v = fbm(q) * 0.65 + fbm(q * 2.3 + 11.0) * 0.35;
+  vec3 sky = mix(colour, colour * 0.45 + 0.5, uv.y);
+  return mix(sky, vec3(1.0) - 0.25 * smoothstep(0.6, 0.9, v), smoothstep(0.42, 0.7, v));
+}`, { backdrop: true })
+define('matrixRain', ['colour'], { colour: colour('#3dff7a'), speed: num(1, 0, 10), size: num(14, 6, 80) }, `
+vec3 backdrop(vec2 uv) {
+  vec2 p = uv * size, cell = floor(p / big), sub = floor(fract(p / big) * 6.0);
+  float rows = size.y / big + 24.0;
+  float head = fract(time * speed * 0.12 * (0.5 + hash(vec2(cell.x, 3.0))) + hash(vec2(cell.x, 7.0))) * rows, behind = head - cell.y;
+  if (behind < 0.0 || behind > 20.0 || sub.x < 1.0 || sub.y < 1.0) return vec3(0.0);
+  // Each square is a mark made of dots that changes now and then.
+  float on = step(0.5, hash(vec3(sub + cell * 7.0, floor(time * 5.0 * speed + 0.001 + hash(cell) * 10.0))));
+  return mix(colour * (1.0 - behind / 20.0), vec3(0.85, 1.0, 0.9), step(behind, 1.0)) * on;
+}`, { backdrop: true, rename: { size: 'big' } })
+define('copperBars', ['palette'], { palette: pal('rainbow'), count: whole(5, 1, 8), speed: num(1, -5, 5), size: num(34, 4, 300) }, `
+vec3 backdrop(vec2 uv) {
+  vec3 c = vec3(0.0);
+  for (int i = 0; i < 8; i++) {
+    if (float(i) >= count) break;
+    float d = abs(uv.y * size.y - size.y * (0.5 + 0.36 * sin(time * speed * 1.3 + float(i) * 0.55))) / big;
+    // A round bar of metal: bright along its middle. A later bar is in front of an earlier one.
+    if (d < 1.0) c = palette(float(i) / count) * (1.0 - d * d) + 0.5 * pow(1.0 - d, 6.0);
+  }
+  return c;
+}`, { backdrop: true, rename: { size: 'big' } })
+define('checkerFloor', ['colour'], { colour: colour('#ff2ad4'), dark: colour('#12103a'), speed: num(1, -10, 10) }, `
+vec3 backdrop(vec2 uv) {
+  float h = 0.42, d = uv.y - h;
+  if (d <= 0.0) return mix(vec3(0.01, 0.0, 0.05), colour * 0.55, pow(uv.y / h, 5.0));
+  // Below the horizon: the further down the screen, the nearer the floor.
+  float z = 1.0 / d;
+  float squares = mod(floor((uv.x - 0.5) * z * 3.0 * size.x / size.y) + floor(z * 1.2 + time * speed * 3.0), 2.0);
+  return mix(colour * 0.55, mix(dark, colour, squares), clamp(d * 5.0, 0.0, 1.0));
+}`, { backdrop: true })
+define('twister', ['palette'], { palette: pal('candy'), speed: num(1, -5, 5), size: num(0.22, 0.02, 0.5) }, `
+vec3 backdrop(vec2 uv) {
+  float t = time * speed, a = t + sin(uv.y * 3.0 + t * 1.3) * 2.2, x = uv.x - 0.5 - 0.08 * sin(uv.y * 2.0 + t);
+  // A square bar seen from the side, twisted along its length: the faces that are towards you, each with its own colour.
+  for (int i = 0; i < 4; i++) {
+    float x0 = sin(a + float(i) * 1.5708) * wide, x1 = sin(a + float(i + 1) * 1.5708) * wide;
+    if (x0 < x1 && x > x0 && x < x1) return palette(float(i) / 4.0) * (0.35 + 0.65 * (x1 - x0) / (wide * 1.4143));
+  }
+  return vec3(0.0);
+}`, { backdrop: true, rename: { size: 'wide' } })
+
+// --- the music, drawn. With nothing to listen to they are still and dark.
+define('spectrumBars', ['palette'], { palette: pal('rainbow'), count: whole(32, 4, 64), size: num(0.7, 0.05, 1) }, `
+vec3 backdrop(vec2 uv) {
+  float n = floor(count + 0.5), i = floor(uv.x * n), v = texture(spectrum, vec2((i + 0.5) / n, 0.5)).r * tall;
+  float bar = step(1.0 - uv.y, v) * step(0.12, fract(uv.x * n)) * step(fract(uv.x * n), 0.88);
+  return palette(i / n * 0.85) * bar * (0.55 + 0.45 * (1.0 - uv.y) / max(v, 0.001));
+}`, { backdrop: true, rename: { size: 'tall' } })
+define('spectrumRing', ['palette'], { palette: pal('rainbow'), size: num(90, 10, 1000), x: place(), y: place() }, `
+vec3 backdrop(vec2 uv) {
+  ${PLACE}
+  float s = abs(atan(p.y, p.x) / TAU * 2.0), bars = 48.0, i = floor(s * bars);
+  float v = texture(spectrum, vec2((i + 0.5) / bars * 0.9, 0.5)).r, r = length(p);
+  float bar = step(big, r) * step(r, big * (1.03 + 1.4 * v)) * step(0.15, fract(s * bars)) * step(fract(s * bars), 0.85);
+  return palette(i / bars * 0.85) * bar;
+}`, { backdrop: true, rename: { size: 'big' } })
+define('waveformRing', ['colour'], { colour: colour('white'), size: num(110, 10, 1000), strength: num(3, 0.5, 40), x: place(), y: place() }, `
+vec3 backdrop(vec2 uv) {
+  ${PLACE}
+  float s = abs(atan(p.y, p.x) / TAU * 2.0);
+  float r = big * (1.0 + (texture(waveform, vec2(s, 0.5)).r - 0.5) * 1.2), aa = size.x / resolution.x;
+  return colour * (1.0 - smoothstep(strength * 0.5, strength * 0.5 + aa * 1.5, abs(length(p) - r)));
+}`, { backdrop: true, rename: { size: 'big' } })
+define('beatFlash', ['strength'], { strength: num(0.5, 0, 2), colour: colour('white') }, `
+vec4 effect(vec2 uv) { return vec4(texture(picture, uv).rgb + colour * pulse * strength, 1.0); }`)
+define('bassShake', ['strength'], { strength: num(14, 0, 200), speed: num(25, 1, 100) }, `
+vec4 effect(vec2 uv) {
+  vec2 o = (vec2(noise(vec2(time * speed, 1.0)), noise(vec2(7.0, time * speed))) - 0.5) * 2.0 * strength * bass;
+  return look((uv * size + o) / size);
+}`)
+
 /**
  * LOOKS: several effects at once, by name. Each entry is [effect, its settings].
  */
@@ -516,6 +1001,13 @@ const LOOKS = {
   underwater: [['wobble', { size: 10, scale: 160 }], ['tint', { colour: '#7fd4ff' }], ['glow', { strength: 0.5, threshold: 0.5 }], ['vignette', { strength: 0.6, colour: '#001830' }]],
   oldfilm: [['duotone', { dark: '#1a1208', light: '#f2e2c0' }], ['grain', { strength: 0.3, size: 2 }], ['vignette', { strength: 0.75 }]],
   disco: [['kaleidoscope', { segments: 10 }], ['hue', { shift: 0, speed: 60 }], ['glow', { strength: 0.8 }]],
+  gameboy: [['dither', { palette: 'gameboy', size: 3 }]],
+  c64: [['dither', { palette: 'c64', size: 3 }], ['scanlines', { strength: 0.2, size: 3 }]],
+  noir: [['saturate', { strength: 0 }], ['contrast', { strength: 1.6 }], ['grain', { strength: 0.25, size: 2 }], ['vignette', { strength: 0.8 }]],
+  comicbook: [['cartoon', { levels: 4 }], ['dots', { size: 5, paper: '#101018' }]],
+  storm: [['rain', { strength: 0.7 }], ['lightning', {}], ['fog', { strength: 0.35, colour: '#8a94a8' }], ['vignette', { strength: 0.6 }]],
+  winter: [['tint', { colour: '#cfe4ff' }], ['snow', {}], ['softFocus', { strength: 0.4 }], ['vignette', { strength: 0.4, colour: '#0a1830' }]],
+  cinema: [['streaks', { strength: 0.5 }], ['tiltShift', { strength: 5 }], ['grain', { strength: 0.1 }], ['vignette', { strength: 0.5 }]],
   terminal: [['letters', { size: 9, own: false, colour: '#3dff7a' }], ['glow', { strength: 0.6, threshold: 0.2, radius: 14 }], ['scanlines', { strength: 0.25 }]],
 }
 
@@ -949,6 +1441,8 @@ class Pipeline {
     gl.bindFramebuffer(gl.FRAMEBUFFER, to ? to.fbo : null)
     gl.viewport(0, 0, to ? to.w : this.w, to ? to.h : this.h)
     gl.useProgram(p.program)
+    // The sound's pictures are made or brought up to date first: doing that leaves one of them where the scene's picture goes.
+    const sounds = L.spectrum || L.waveform ? this.soundPictures() : null
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, from.tex)
     if (L.picture) gl.uniform1i(L.picture, 0)
@@ -966,8 +1460,8 @@ class Pipeline {
     if (L.highs) gl.uniform1f(L.highs, l.highs)
     if (L.loudness) gl.uniform1f(L.loudness, l.loudness)
     if (L.pulse) gl.uniform1f(L.pulse, l.pulse)
-    if (L.spectrum || L.waveform) {
-      const s = this.soundPictures()
+    if (sounds) {
+      const s = sounds
       gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, s.spectrum.tex)
       gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, s.waveform.tex)
       if (L.spectrum) gl.uniform1i(L.spectrum, 2)
@@ -1344,6 +1838,8 @@ function api(pipe) {
   out.colorCycle = out.colourCycle
   out.bulge = out.fisheye
   out.halftone = out.dots
+  out.colorBleed = out.colourBleed
+  out.godRays = out.lightRays
   const band = (name) => () => pipe.listener[name]
   const bands = { bass: band('bass'), mids: band('mids'), highs: band('highs'), loudness: band('loudness'), pulse: band('pulse') }
   const bandOf = (which) => {
@@ -1417,7 +1913,7 @@ function api(pipe) {
       const name = camel(kind)
       if (name === 'look') { const all = out.look(...(args || [])); made.set(id, all); return }
       if (name === 'shader') { made.set(id, out.shader(...(args || []))); return }
-      if (!(name in DEFS || ['bloom', 'colorCycle', 'bulge', 'halftone'].includes(name))) throw new Error(`There is no effect called ${kind}`)
+      if (!(name in DEFS || ['bloom', 'colorCycle', 'bulge', 'halftone', 'colorBleed', 'godRays'].includes(name))) throw new Error(`There is no effect called ${kind}`)
       made.set(id, out[name](...(args || [])))
     },
     set(id, name, value) { const fx = made.get(id); if (fx) fx[camel(name)] = value },
@@ -1449,9 +1945,9 @@ effects.definitions = () => {
   for (const name of NAMES) {
     const def = DEFS[name], settings = {}
     for (const key in def.settings) { const s = def.settings[key]; settings[key] = { kind: s.kind, default: s.default, ...(s.min !== undefined ? { min: s.min, max: s.max } : {}), ...(s.choices ? { choices: s.choices } : {}), ...(s.place ? { place: true } : {}) } }
-    out[name] = { order: def.order, settings, backdrop: !!def.backdrop }
+    out[name] = { order: def.order, settings, backdrop: !!def.backdrop, cost: def.cost || (def.run ? 'some' : 'light') }
   }
-  return { effects: out, looks: Object.keys(LOOKS), palettes: Object.keys(PALETTES), aliases: { bloom: 'glow', colorCycle: 'colourCycle', bulge: 'fisheye', halftone: 'dots' } }
+  return { effects: out, looks: Object.keys(LOOKS), palettes: Object.keys(PALETTES), aliases: { bloom: 'glow', colorCycle: 'colourCycle', bulge: 'fisheye', halftone: 'dots', colorBleed: 'colourBleed', godRays: 'lightRays' } }
 }
 function onlyCanvas() {
   // A canvas laid over the scene's by this library or by dials.js is not the scene's.
@@ -1607,6 +2103,7 @@ const hue = on('hue'), saturate = on('saturate'), brighten = on('brighten'), con
 const colourCycle = on('colourCycle'), colorCycle = on('colourCycle'), scanlines = on('scanlines'), crt = on('crt'), glitch = on('glitch'), grain = on('grain'), vignette = on('vignette'), edges = on('edges')
 const dots = on('dots'), halftone = on('dots'), letters = on('letters'), plasma = on('plasma'), starfield = on('starfield'), metaballs = on('metaballs'), flow = on('flow')
 const blur = on('blur'), glow = on('glow'), bloom = on('glow'), trails = on('trails')
+const droste = on('droste'), rotozoom = on('rotozoom'), hexagons = on('hexagons'), glassTiles = on('glassTiles'), frosted = on('frosted'), heatHaze = on('heatHaze'), caustics = on('caustics'), shake = on('shake'), punch = on('punch'), motionBlur = on('motionBlur'), tiltShift = on('tiltShift'), lightRays = on('lightRays'), streaks = on('streaks'), softFocus = on('softFocus'), smear = on('smear'), stutter = on('stutter'), gradientMap = on('gradientMap'), thermal = on('thermal'), nightVision = on('nightVision'), sepia = on('sepia'), threshold = on('threshold'), solarize = on('solarize'), colourBleed = on('colourBleed'), rainbowEdges = on('rainbowEdges'), dither = on('dither'), interlace = on('interlace'), led = on('led'), emboss = on('emboss'), sharpen = on('sharpen'), sketch = on('sketch'), cartoon = on('cartoon'), stainedGlass = on('stainedGlass'), crosshatch = on('crosshatch'), oil = on('oil'), dust = on('dust'), lightLeaks = on('lightLeaks'), rain = on('rain'), snow = on('snow'), bokeh = on('bokeh'), fog = on('fog'), lightning = on('lightning'), warp = on('warp'), voronoi = on('voronoi'), moire = on('moire'), interference = on('interference'), aurora = on('aurora'), fire = on('fire'), clouds = on('clouds'), matrixRain = on('matrixRain'), copperBars = on('copperBars'), checkerFloor = on('checkerFloor'), twister = on('twister'), spectrumBars = on('spectrumBars'), spectrumRing = on('spectrumRing'), waveformRing = on('waveformRing'), beatFlash = on('beatFlash'), bassShake = on('bassShake'), colorBleed = on('colourBleed'), godRays = on('lightRays')
 const shader = on('shader'), look = on('look'), clearEffects = on('clearEffects'), listenTo = on('listenTo'), react = on('react'), effectsQuality = on('effectsQuality')
 const bass = on('bass'), mids = on('mids'), highs = on('highs'), loudness = on('loudness'), pulse = on('pulse')
 const lookNames = () => Object.keys(LOOKS), effectNames = () => [...NAMES], paletteNames = () => Object.keys(PALETTES)
@@ -1615,6 +2112,7 @@ export {
   effects, kaleidoscope, mirror, pixelate, waves, ripple, wobble, swirl, fisheye, bulge, tunnel, tile, zoomBlur, spinBlur, rgbSplit,
   hue, saturate, brighten, contrast, invert, posterize, tint, duotone, colourCycle, colorCycle, scanlines, crt, glitch, grain, vignette, edges,
   dots, halftone, letters, plasma, starfield, metaballs, flow, blur, glow, bloom, trails,
+  droste, rotozoom, hexagons, glassTiles, frosted, heatHaze, caustics, shake, punch, motionBlur, tiltShift, lightRays, streaks, softFocus, smear, stutter, gradientMap, thermal, nightVision, sepia, threshold, solarize, colourBleed, rainbowEdges, dither, interlace, led, emboss, sharpen, sketch, cartoon, stainedGlass, crosshatch, oil, dust, lightLeaks, rain, snow, bokeh, fog, lightning, warp, voronoi, moire, interference, aurora, fire, clouds, matrixRain, copperBars, checkerFloor, twister, spectrumBars, spectrumRing, waveformRing, beatFlash, bassShake, colorBleed, godRays,
   shader, look, clearEffects, listenTo, react, effectsQuality, bass, mids, highs, loudness, pulse, lookNames, effectNames, paletteNames,
   renderFrames, recordVideo, saveVideo, version,
 }
