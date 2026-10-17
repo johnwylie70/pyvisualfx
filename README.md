@@ -95,6 +95,12 @@ Python never touches the page: it may be in a worker, or on another computer. Ea
 
 The music's numbers work both ways. A change of scene is seen through the effects only with the Pyctures that carries the library.
 
+## Megademo
+
+[![Megademo: a rotozoom: one small picture turned, zoomed and repeated by an effect](docs/images/megademo.jpg)](https://github.com/johnwylie70/megademo)
+
+[Megademo](https://github.com/johnwylie70/megademo) is a demo in the style of the ones made on the C64 and Amiga, made in Circuitry Studio. About forty of these effects, never more than four at once, make up a whole demo cut to a chiptune. It is one file, `main.py`, and it is worth reading for how it is done. [Watch it on YouTube](https://youtu.be/6fKMwrOik5k).
+
 ## Working on it
 
 ```
